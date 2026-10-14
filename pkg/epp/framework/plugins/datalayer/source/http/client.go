@@ -20,6 +20,7 @@ package http
 import (
 	"context"
 	"fmt"
+	"github.com/llm-d/llm-d-router/pkg/common/hosting"
 	"io"
 	"net/http"
 	"net/url"
@@ -76,7 +77,13 @@ func (cl *client) Get(ctx context.Context, target *url.URL, ep Addressable,
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %v", err)
 	}
-	resp, err := cl.Do(req) //#nosec -- target URL is constructed from operator endpoint metadata
+	var resp *http.Response
+	if hosting.From(ctx).Hosted() {
+		// A hosted runtime serves the model servers itself.
+		resp, err = hosting.Transport(cl.Transport).RoundTrip(req)
+	} else {
+		resp, err = cl.Do(req) //#nosec -- target URL is constructed from operator endpoint metadata
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch data from %s: %w", ep.GetID(), err)
 	}

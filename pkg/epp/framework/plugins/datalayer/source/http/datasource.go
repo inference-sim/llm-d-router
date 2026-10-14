@@ -38,7 +38,6 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/llm-d/llm-d-router/pkg/common/hosting"
 	"github.com/llm-d/llm-d-router/pkg/common/observability/logging"
 	fwkdl "github.com/llm-d/llm-d-router/pkg/epp/framework/interface/datalayer"
 	fwkplugin "github.com/llm-d/llm-d-router/pkg/epp/framework/interface/plugin"
@@ -183,7 +182,7 @@ func NewHTTPDataSource[T any](scheme, path string, tlsOpts TLSOptions,
 	cl := &client{
 		Client: http.Client{
 			Timeout:   timeout,
-			Transport: hosting.Transport(baseTransport),
+			Transport: baseTransport,
 		},
 	}
 	if scheme == "https" {
@@ -193,7 +192,7 @@ func NewHTTPDataSource[T any](scheme, path string, tlsOpts TLSOptions,
 		}
 		httpsTransport := baseTransport.Clone()
 		httpsTransport.TLSClientConfig = tlsCfg
-		cl.Transport = hosting.Transport(httpsTransport)
+		cl.Transport = httpsTransport
 	}
 	return &HTTPDataSource[T]{
 		typedName:      fwkplugin.TypedName{Type: pluginType, Name: pluginName},
