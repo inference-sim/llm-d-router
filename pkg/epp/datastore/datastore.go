@@ -37,6 +37,7 @@ import (
 
 	apixv1 "github.com/llm-d/llm-d-router/apix/v1"
 	"github.com/llm-d/llm-d-router/apix/v1alpha2"
+	"github.com/llm-d/llm-d-router/pkg/common/hosting"
 	logutil "github.com/llm-d/llm-d-router/pkg/common/observability/logging"
 	"github.com/llm-d/llm-d-router/pkg/epp/datalayer"
 	fwkdl "github.com/llm-d/llm-d-router/pkg/epp/framework/interface/datalayer"
@@ -293,6 +294,12 @@ func (ds *datastore) PodList(predicate func(fwkdl.Endpoint) bool) []fwkdl.Endpoi
 		}
 		return true
 	})
+	if hosting.From(ds.parentCtx).Hosted() {
+		// sync.Map order varies between runs; a hosted runtime lists endpoints in ID order.
+		slices.SortFunc(res, func(a, b fwkdl.Endpoint) int {
+			return strings.Compare(a.GetMetadata().ID.String(), b.GetMetadata().ID.String())
+		})
+	}
 
 	return res
 }

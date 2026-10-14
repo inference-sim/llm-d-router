@@ -24,10 +24,10 @@ import (
 	"fmt"
 	"sort"
 	"sync"
-	"time"
 
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	"github.com/llm-d/llm-d-router/pkg/common/hosting"
 	logutil "github.com/llm-d/llm-d-router/pkg/common/observability/logging"
 	"github.com/llm-d/llm-d-router/pkg/epp/framework/interface/plugin"
 	"github.com/llm-d/llm-d-router/pkg/epp/framework/interface/requestcontrol"
@@ -189,21 +189,23 @@ func newDataProducer(ctx context.Context, name string, config config, handle plu
 		dk:          attrprefix.PrefixCacheMatchInfoDataKey.WithNonEmptyProducerName(name),
 	}
 
-	go p.CleanUpInactivePods(ctx, handle)
+	hosting.From(ctx).Go(func() { p.CleanUpInactivePods(ctx, handle) })
 
 	return p, nil
 }
 
 // CleanUpInactivePods starts a goroutine that periodically removes inactive pods from the indexer.
 func (p *dataProducer) CleanUpInactivePods(ctx context.Context, handle plugin.Handle) {
-	ticker := time.NewTicker(podActiveCheckInterval)
+	rt := hosting.From(ctx)
+	ticker := rt.Clock().NewTicker(podActiveCheckInterval)
 	defer ticker.Stop()
 
 	for {
+		rt.Park(func() bool { return ctx.Err() != nil || len(ticker.C()) > 0 })
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
+		case <-ticker.C():
 			podNames := handle.PodList()
 			activePods := make(map[ServerID]struct{}, len(podNames))
 			for _, nsn := range podNames {
@@ -305,7 +307,9 @@ func (p *dataProducer) PreRequest(ctx context.Context, request *fwksched.Inferen
 	}
 
 	// Update indexer asynchronously to avoid blocking the request path.
-	p.wg.Go(func() {
+	p.wg.Add(1)
+	hosting.From(ctx).Go(func() {
+		defer p.wg.Done()
 		for _, s := range servers {
 			for _, hashes := range state.PerPromptHashes {
 				p.indexerInst.Add(hashes, s)

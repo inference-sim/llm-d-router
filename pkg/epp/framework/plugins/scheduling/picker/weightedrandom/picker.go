@@ -136,7 +136,7 @@ func (p *WeightedRandomPicker) Pick(ctx context.Context, scoredEndpoints []*fwks
 		}
 
 		// If we're here the scoredEndpoint.Score > 0. Generate a random number U in (0,1)
-		u := picker.PickerRand.Float64()
+		u := picker.RandFor(ctx).Float64()
 		if u == 0 {
 			u = 1e-10 // Avoid 0 to ensure positive key
 		}

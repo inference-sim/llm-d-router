@@ -29,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	ctrl "sigs.k8s.io/controller-runtime"
 
+	"github.com/llm-d/llm-d-router/pkg/common/hosting"
 	"github.com/llm-d/llm-d-router/pkg/common/observability/logging"
 	fwkdl "github.com/llm-d/llm-d-router/pkg/epp/framework/interface/datalayer"
 	fwkplugin "github.com/llm-d/llm-d-router/pkg/epp/framework/interface/plugin"
@@ -486,8 +487,13 @@ func (r *Runtime) NewEndpoint(ctx context.Context, endpointMetadata *fwkdl.Endpo
 		return nil
 	}
 
-	ticker := NewTimeTicker(r.pollingInterval)
-	if err := collector.Start(ctx, ticker, endpoint, dispatchers); err != nil {
+	var err error
+	if rt := hosting.From(ctx); rt.Hosted() {
+		err = collector.startHosted(ctx, rt, r.pollingInterval, endpoint, dispatchers)
+	} else {
+		err = collector.Start(ctx, NewTimeTicker(r.pollingInterval), endpoint, dispatchers)
+	}
+	if err != nil {
 		logger.Error(err, "failed to start collector for endpoint", "endpoint", key)
 		r.collectors.Remove(key)
 		if r.crossReplicaPub != nil {

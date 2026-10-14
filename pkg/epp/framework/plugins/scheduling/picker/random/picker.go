@@ -92,7 +92,9 @@ func (p *RandomPicker) Pick(ctx context.Context, scoredEndpoints []*fwksched.Sco
 	}
 
 	// Shuffle to ensure uniform random selection.
-	picker.ShuffleScoredEndpoints(scoredEndpoints)
+	picker.RandFor(ctx).Shuffle(len(scoredEndpoints), func(i, j int) {
+		scoredEndpoints[i], scoredEndpoints[j] = scoredEndpoints[j], scoredEndpoints[i]
+	})
 
 	// if we have enough endpoints to return keep only the relevant subset
 	if p.maxNumOfEndpoints < len(scoredEndpoints) {

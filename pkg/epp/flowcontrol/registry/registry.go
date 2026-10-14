@@ -92,6 +92,7 @@ type FlowRegistry struct {
 	config *Config
 	logger logr.Logger
 	clock  clock.WithTicker
+	hosted bool
 
 	// --- Lock-free / Concurrent state (hot path) ---
 

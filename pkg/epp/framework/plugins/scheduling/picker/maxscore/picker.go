@@ -105,7 +105,7 @@ func (p *MaxScorePicker) Pick(ctx context.Context, scoredEndpoints []*fwksched.S
 	// RotateScoredEndpoints provides deterministic round-robin tie-breaking
 	// for equal-score candidates. Rotating within each equal-score tier ensures
 	// traffic is distributed evenly without distortion from lower-scoring endpoints.
-	counter := picker.PickerRand.NextCounter()
+	counter := picker.RandFor(ctx).NextCounter()
 	for start := 0; start < len(scoredEndpoints) && start < p.maxNumOfEndpoints; {
 		end := start + 1
 		for end < len(scoredEndpoints) && scoredEndpoints[end].Score == scoredEndpoints[start].Score {

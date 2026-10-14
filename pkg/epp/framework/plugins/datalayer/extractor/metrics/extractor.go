@@ -23,11 +23,11 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"time"
 
 	dto "github.com/prometheus/client_model/go"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	"github.com/llm-d/llm-d-router/pkg/common/hosting"
 	logutil "github.com/llm-d/llm-d-router/pkg/common/observability/logging"
 	fwkdl "github.com/llm-d/llm-d-router/pkg/epp/framework/interface/datalayer"
 	fwkplugin "github.com/llm-d/llm-d-router/pkg/epp/framework/interface/plugin"
@@ -227,7 +227,7 @@ func (ext *Extractor) Extract(ctx context.Context, in fwkdl.PollInput[sourcemetr
 	}
 
 	if updated {
-		clone.UpdateTime = time.Now()
+		clone.UpdateTime = hosting.Now(ctx)
 		// Guarded: this runs per endpoint per scrape tick, and the logger
 		// construction, MetricNames slice, and boxed args all allocate even
 		// when TRACE is off.

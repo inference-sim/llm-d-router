@@ -24,11 +24,13 @@ limitations under the License.
 package picker
 
 import (
+	"context"
 	"math"
 	"math/rand/v2"
 	"sync"
 	"time"
 
+	"github.com/llm-d/llm-d-router/pkg/common/hosting"
 	fwksched "github.com/llm-d/llm-d-router/pkg/epp/framework/interface/scheduling"
 )
 
@@ -44,8 +46,11 @@ type PickerParameters struct {
 }
 
 type lockedRand struct {
-	mu      sync.Mutex
-	rand    *rand.Rand
+	mu   sync.Mutex
+	rand interface {
+		Float64() float64
+		Shuffle(n int, swap func(i, j int))
+	}
 	counter int // round-robin counter for deterministic tie-breaking
 }
 
@@ -85,6 +90,18 @@ func (r *lockedRand) NextCounter() int {
 // PickerRand is a thread-safe random number generator shared by all pickers to avoid seeding
 // overhead and ensure controlled randomization.
 var PickerRand = newLockedRand()
+
+type pickerRandKey struct{}
+
+// RandFor returns the picker random source of the runtime on ctx: PickerRand for a process, or a
+// per-runtime source drawn from the runtime's "picker" stream for a hosted runtime.
+func RandFor(ctx context.Context) *lockedRand {
+	rt := hosting.From(ctx)
+	if !rt.Hosted() {
+		return PickerRand
+	}
+	return rt.Local(pickerRandKey{}, func() any { return &lockedRand{rand: rt.Rand("picker")} }).(*lockedRand)
+}
 
 // ShuffleScoredEndpoints randomly shuffles the scored endpoints.
 func ShuffleScoredEndpoints(scoredEndpoints []*fwksched.ScoredEndpoint) {

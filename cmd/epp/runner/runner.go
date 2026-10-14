@@ -1234,34 +1234,11 @@ func (r *Runner) runWithFileDiscovery(ctx context.Context, opts *runserver.Optio
 		return err
 	}
 
-	if err := fwkplugin.ValidatePluginStability(r.PluginHandle, opts.AllowExperimentalPlugins); err != nil {
-		setupLog.Error(err, "Plugin stability validation failed")
-		return err
-	}
-
-	if err := r.dlRuntime.Configure(eppConfig.DataConfig, setupLog); err != nil {
-		return fmt.Errorf("failed to configure datalayer: %w", err)
-	}
-
-	if r.schedulerConfig == nil {
-		return errors.New("scheduler config must be set either by config api or through code")
-	}
-	setupLog.Info("parsed config", "scheduler-config", r.schedulerConfig)
-
-	scheduler := scheduling.NewSchedulerWithConfig(r.schedulerConfig)
-
-	// Outside Kubernetes there is no InferenceObjective CRD, so per-request
-	// priority falls back to Director.defaultPriority (see
-	// pkg/epp/requestcontrol/director.go); static bands defined in
-	// EndpointPickerConfig.flowControl still apply.
-	endpointCandidates := contracts.EndpointCandidates(requestcontrol.NewDatastoreEndpointCandidates(ds,
-		requestcontrol.WithDisableEndpointSubsetFilter(opts.DisableEndpointSubsetFilter)))
 	// File-discovery mode has no InferenceObjective reconciler to drive the
 	// control plane; static bands from config apply at registry construction.
-	endpointCandidates, admissionController, _, requestEvictor := r.initAdmissionControl(r.servingCtx, opts, eppConfig, endpointCandidates)
-	director := requestcontrol.NewDirectorWithConfig(ds, scheduler, admissionController, endpointCandidates, r.requestControlConfig)
-	if requestEvictor != nil {
-		director.SetRequestEvictor(requestEvictor)
+	director, _, requestEvictor, err := r.assembleDirector(r.servingCtx, opts, eppConfig, ds)
+	if err != nil {
+		return err
 	}
 
 	gknn := common.GKNN{
@@ -1341,6 +1318,41 @@ func (r *Runner) runWithFileDiscovery(ctx context.Context, opts *runserver.Optio
 		return serveMetrics(ctx, opts.MetricsPort, opts.EnablePprof)
 	})
 	return g.Run(ctx)
+}
+
+// assembleDirector builds the request path of a router without a Kubernetes cluster: it validates
+// plugin stability, configures the data layer, and wires the scheduler, admission control and
+// Director over ds.
+func (r *Runner) assembleDirector(ctx context.Context, opts *runserver.Options, eppConfig *config.Config, ds datastore.Datastore) (
+	*requestcontrol.Director, contracts.PriorityBandControlPlane, *fceviction.RequestEvictor, error) {
+	if err := fwkplugin.ValidatePluginStability(r.PluginHandle, opts.AllowExperimentalPlugins); err != nil {
+		setupLog.Error(err, "Plugin stability validation failed")
+		return nil, nil, nil, err
+	}
+
+	if err := r.dlRuntime.Configure(eppConfig.DataConfig, setupLog); err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to configure datalayer: %w", err)
+	}
+
+	if r.schedulerConfig == nil {
+		return nil, nil, nil, errors.New("scheduler config must be set either by config api or through code")
+	}
+	setupLog.Info("parsed config", "scheduler-config", r.schedulerConfig)
+
+	scheduler := scheduling.NewSchedulerWithConfig(r.schedulerConfig)
+
+	// Outside Kubernetes there is no InferenceObjective CRD, so per-request
+	// priority falls back to Director.defaultPriority (see
+	// pkg/epp/requestcontrol/director.go); static bands defined in
+	// EndpointPickerConfig.flowControl still apply.
+	endpointCandidates := contracts.EndpointCandidates(requestcontrol.NewDatastoreEndpointCandidates(ds,
+		requestcontrol.WithDisableEndpointSubsetFilter(opts.DisableEndpointSubsetFilter)))
+	endpointCandidates, admissionController, controlPlane, requestEvictor := r.initAdmissionControl(ctx, opts, eppConfig, endpointCandidates)
+	director := requestcontrol.NewDirectorWithConfig(ds, scheduler, admissionController, endpointCandidates, r.requestControlConfig)
+	if requestEvictor != nil {
+		director.SetRequestEvictor(requestEvictor)
+	}
+	return director, controlPlane, requestEvictor, nil
 }
 
 // metricsShutdownTimeout bounds graceful shutdown of the metrics server so a

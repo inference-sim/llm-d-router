@@ -28,6 +28,7 @@ import (
 	"k8s.io/utils/clock"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	"github.com/llm-d/llm-d-router/pkg/common/hosting"
 	logutil "github.com/llm-d/llm-d-router/pkg/common/observability/logging"
 	"github.com/llm-d/llm-d-router/pkg/epp/flowcontrol/contracts"
 	"github.com/llm-d/llm-d-router/pkg/epp/flowcontrol/controller/internal"
@@ -121,7 +122,7 @@ func NewFlowController(
 	deps Deps,
 ) *FlowController {
 	if deps.Clock == nil {
-		deps.Clock = clock.RealClock{}
+		deps.Clock = hosting.From(ctx).Clock()
 	}
 	var registryBackground contracts.FlowRegistryBackground
 	if bg, ok := deps.Registry.(contracts.FlowRegistryBackground); ok {
@@ -220,7 +221,7 @@ func NewFlowController(
 
 	fc.logger.V(logutil.DEFAULT).Info("Starting the Processor.")
 
-	go fc.processor.Run(fc.parentCtx)
+	hosting.From(ctx).Go(func() { fc.processor.Run(fc.parentCtx) })
 
 	return fc
 }
@@ -411,7 +412,7 @@ func (fc *FlowController) tryDistribution(
 	distributeCtx := reqCtx
 	if saturationTTL > 0 {
 		var cancel context.CancelFunc
-		distributeCtx, cancel = context.WithDeadlineCause(reqCtx, enqueueTime.Add(saturationTTL), types.ErrTTLExpired)
+		distributeCtx, cancel = hosting.From(reqCtx).WithDeadlineCause(reqCtx, enqueueTime.Add(saturationTTL), types.ErrTTLExpired)
 		defer cancel()
 	}
 
@@ -441,6 +442,9 @@ func (fc *FlowController) awaitFinalization(
 	reqCtx context.Context,
 	item *internal.FlowItem,
 ) error {
+	hosting.From(reqCtx).Park(func() bool {
+		return reqCtx.Err() != nil || fc.parentCtx.Err() != nil || item.FinalState() != nil
+	})
 	select {
 	case <-reqCtx.Done():
 		// Asynchronous Finalization (Controller-initiated):
@@ -501,7 +505,7 @@ func (fc *FlowController) createRequestContext(
 	var cancel context.CancelFunc
 	if saturationTTL > 0 && fc.config.NoEndpointRequestTTL > 0 {
 		backstop := max(saturationTTL, fc.config.NoEndpointRequestTTL) + 2*fc.config.ExpiryCleanupInterval
-		reqCtx, cancel = context.WithDeadlineCause(ctx, enqueueTime.Add(backstop), types.ErrTTLExpired)
+		reqCtx, cancel = hosting.From(ctx).WithDeadlineCause(ctx, enqueueTime.Add(backstop), types.ErrTTLExpired)
 	} else {
 		reqCtx, cancel = context.WithCancel(ctx)
 	}
