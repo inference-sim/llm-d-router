@@ -27,6 +27,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/llm-d/llm-d-router/pkg/common/hosting"
 	"github.com/llm-d/llm-d-router/pkg/kvcache/kvblock"
 	"github.com/llm-d/llm-d-router/pkg/kvcache/tokenization"
 	tokenizerTypes "github.com/llm-d/llm-d-router/pkg/kvcache/tokenization/types"
@@ -335,7 +336,7 @@ func NewPlugin(ctx context.Context, name string, config *tokenizerPluginConfig) 
 		p.endpointDiscovery = newEndpointDiscoveryHandler(typedName, endpointPicker)
 	}
 	if w, ok := backend.(warmer); ok {
-		go w.warmup(ctx)
+		hosting.From(ctx).Go(func() { w.warmup(ctx) })
 	}
 	return p, nil
 }

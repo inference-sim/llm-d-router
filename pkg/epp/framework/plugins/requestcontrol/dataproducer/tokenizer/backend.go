@@ -24,6 +24,7 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	"github.com/llm-d/llm-d-router/pkg/common/hosting"
 	logutil "github.com/llm-d/llm-d-router/pkg/common/observability/logging"
 	fwkrh "github.com/llm-d/llm-d-router/pkg/epp/framework/interface/requesthandling"
 )
@@ -94,8 +95,11 @@ func (b renderBackend) warmup(ctx context.Context) {
 				"err", err)
 			return
 		}
+		rt := hosting.From(ctx)
+		retry := rt.Clock().After(warmupRetryInterval)
+		rt.Park(func() bool { return ctx.Err() != nil || len(retry) > 0 })
 		select {
-		case <-time.After(warmupRetryInterval):
+		case <-retry:
 		case <-ctx.Done():
 			return
 		}

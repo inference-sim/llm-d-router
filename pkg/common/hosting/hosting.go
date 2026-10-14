@@ -30,6 +30,7 @@ package hosting
 
 import (
 	"context"
+	"net/http"
 	"time"
 
 	"k8s.io/utils/clock"
@@ -107,4 +108,27 @@ func Now(ctx context.Context) time.Time {
 // Since returns the time elapsed on the runtime clock of ctx since t.
 func Since(ctx context.Context, t time.Time) time.Duration {
 	return From(ctx).Now().Sub(t)
+}
+
+// RoundTripper is implemented by a Runtime that serves the router's outbound HTTP requests itself,
+// for example a simulator that plays the model servers.
+type RoundTripper interface {
+	RoundTrip(*http.Request) (*http.Response, error)
+}
+
+// Transport returns base wrapped so that a request whose context carries a hosted Runtime that
+// implements RoundTripper is served by that Runtime instead of the network.
+func Transport(base http.RoundTripper) http.RoundTripper {
+	return hostedTransport{base: base}
+}
+
+type hostedTransport struct{ base http.RoundTripper }
+
+func (t hostedTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	if rt := From(r.Context()); rt.Hosted() {
+		if server, ok := rt.(RoundTripper); ok {
+			return server.RoundTrip(r)
+		}
+	}
+	return t.base.RoundTrip(r)
 }
