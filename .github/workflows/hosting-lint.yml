@@ -1,0 +1,29 @@
+# The inference-sim fork of llm-d-router runs the router on an injectable hosting runtime
+# (pkg/common/hosting) so BLIS can embed it in a discrete-event simulation. This workflow keeps
+# that property across rebases onto new llm-d releases.
+name: hosting-lint
+
+on:
+  push:
+    branches: [llm-d-r]
+  pull_request:
+    branches: [llm-d-r]
+
+jobs:
+  hosting:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Fetch upstream
+        run: git remote add upstream https://github.com/llm-d/llm-d-router.git && git fetch --no-tags upstream
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: No new direct clock, timer, goroutine or randomness use on router paths
+        run: go run ./hack/hosting-lint
+      - name: Patch budget (lines changed in upstream files)
+        run: go run ./hack/hosting-lint -budget
+      - name: Seam and converted packages
+        run: go test ./pkg/common/hosting/... ./pkg/epp/requestcontrol/... ./pkg/epp/scheduling/... ./pkg/epp/datastore/... ./pkg/epp/datalayer/... ./pkg/epp/flowcontrol/... ./pkg/epp/framework/... ./pkg/epp/handlers/... ./cmd/epp/...
