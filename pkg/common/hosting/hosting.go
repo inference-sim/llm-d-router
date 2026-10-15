@@ -30,6 +30,7 @@ package hosting
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -129,6 +130,8 @@ func (t hostedTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 		if server, ok := rt.(RoundTripper); ok {
 			return server.RoundTrip(r)
 		}
+		// A hosted router never reaches the network: its runtime owns time and outbound I/O.
+		return nil, fmt.Errorf("hosting: the hosted runtime does not serve HTTP; refusing %s %s", r.Method, r.URL)
 	}
 	return t.base.RoundTrip(r)
 }

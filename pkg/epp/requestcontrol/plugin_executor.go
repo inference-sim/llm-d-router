@@ -108,6 +108,7 @@ func dataProducerPluginsWithTimeout(ctx context.Context, timeout time.Duration, 
 		errCh <- runProducers(ctx, invocations)
 	})
 
+	rt.Park(func() bool { return len(errCh) > 0 || ctx.Err() != nil })
 	select {
 	case err := <-errCh:
 		return err
