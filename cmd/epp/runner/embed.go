@@ -44,6 +44,10 @@ type EmbedOptions struct {
 	// instantiated. An embedder uses it to register replacement factories for plugin types whose
 	// real implementation depends on external services.
 	AfterRegister func() error
+	// Validate, when set, runs after the configuration is instantiated and before anything is
+	// started (flow control, the data layer, background loops): an embedder refuses a
+	// configuration it cannot host here, before any of its plugins does work.
+	Validate func(cfg *config.Config, handle fwkplugin.Handle) error
 }
 
 // Embedded is a router assembled in-process from the EPP startup path, without the ext_proc,
@@ -90,6 +94,11 @@ func Embed(ctx context.Context, eo EmbedOptions) (*Embedded, error) {
 	eppConfig, err := r.parseConfigurationPhaseTwo(ctx, rawConfig, ds, opts.RefreshMetricsInterval)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse configuration: %w", err)
+	}
+	if eo.Validate != nil {
+		if err := eo.Validate(eppConfig, r.PluginHandle); err != nil {
+			return nil, err
+		}
 	}
 	director, controlPlane, requestEvictor, err := r.assembleDirector(ctx, opts, eppConfig, ds)
 	if err != nil {

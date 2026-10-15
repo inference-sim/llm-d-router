@@ -132,3 +132,10 @@ func (t hostedTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	}
 	return t.base.RoundTrip(r)
 }
+
+// CloseIdleConnections forwards to the base transport, as http.Client.CloseIdleConnections expects.
+func (t hostedTransport) CloseIdleConnections() {
+	if c, ok := t.base.(interface{ CloseIdleConnections() }); ok {
+		c.CloseIdleConnections()
+	}
+}

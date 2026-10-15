@@ -70,6 +70,9 @@ func (s *StreamingServer) HandleRequestHeaders(ctx context.Context, reqCtx *Requ
 }
 
 func (s *StreamingServer) fallbackToRandomEndpoint(ctx context.Context, reqCtx *RequestContext, requestSize int) error {
+	if hosting.From(ctx).Hosted() { // the random pick draws from the process-wide source
+		return errcommon.Error{Code: errcommon.BadRequest, Msg: "a hosted router does not route bodyless requests"}
+	}
 	endpoint := s.director.GetRandomEndpoint()
 	if endpoint == nil {
 		return errcommon.Error{Code: errcommon.Internal, Msg: "no pods available in datastore"}

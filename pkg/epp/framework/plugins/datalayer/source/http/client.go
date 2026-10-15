@@ -20,13 +20,14 @@ package http
 import (
 	"context"
 	"fmt"
-	"github.com/llm-d/llm-d-router/pkg/common/hosting"
 	"io"
 	"net/http"
 	"net/url"
 	"time"
 
 	"k8s.io/apimachinery/pkg/types"
+
+	"github.com/llm-d/llm-d-router/pkg/common/hosting"
 )
 
 // Client is an interface for retrieving the data from an endpoint URL.

@@ -20,7 +20,6 @@ package plugin
 import (
 	"context"
 	"fmt"
-	"slices"
 	"sync"
 	"time"
 
@@ -226,29 +225,20 @@ func (s *PluginState) LastAccessTime(requestID string) (time.Time, bool) {
 // is still alive (see BindLiveness). This operation is safe to run concurrently
 // with other operations on the PluginState.
 func (s *PluginState) cleanStaleRequests() {
-	// Reap in request-ID order so eviction callbacks run in a reproducible order.
-	var requestIDs []string
-	s.requestToLastAccessTime.Range(func(k, _ any) bool {
-		requestIDs = append(requestIDs, k.(string))
-		return true
-	})
-	slices.Sort(requestIDs)
-	for _, requestID := range requestIDs {
-		v, ok := s.requestToLastAccessTime.Load(requestID)
-		if !ok {
-			continue
-		}
+	s.rangeLastAccess(func(k, v any) bool {
+		requestID := k.(string)
 		lastAccessTime := v.(time.Time)
 		if s.rt.Now().Sub(lastAccessTime) > s.stalenessThreshold {
 			if bound, ok := s.requestLiveness.Load(requestID); ok && bound.(context.Context).Err() == nil {
 				log.Log.V(logutil.TRACE).Info("Holding stale request with a live bound context", "requestID", requestID, "lastAccessTime", lastAccessTime)
 				s.Touch(requestID)
-				continue
+				return true
 			}
 			log.Log.V(logutil.DEBUG).Info("Cleaning up stale request from PluginState", "requestID", requestID, "lastAccessTime", lastAccessTime)
 			s.Delete(requestID) // cleanup stale requests (this is safe in sync.Map)
 		}
-	}
+		return true
+	})
 }
 
 // ReadPluginStateKey retrieves data with the given key from PluginState and asserts it to type T.

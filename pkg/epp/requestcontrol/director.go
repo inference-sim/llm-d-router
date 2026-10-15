@@ -63,8 +63,6 @@ const (
 	// producer overrides it by implementing requestcontrol.TimeoutAwareProducer.
 	dataProducerTimeout       = 400 * time.Millisecond
 	responseBodyQueueCapacity = 100
-
-	modelRewriteRandStream = "model-rewrite"
 )
 
 // Datastore defines the interface required by the Director.
@@ -470,10 +468,10 @@ func (d *Director) selectWeightedModel(ctx context.Context, models []v1alpha2.Ta
 
 	if totalWeight == 0 {
 		// If total weight is 0, distribute evenly
-		return models[hosting.From(ctx).Rand(modelRewriteRandStream).IntN(len(models))].ModelRewrite
+		return models[modelRewriteIntN(ctx, len(models))].ModelRewrite //#nosec G404 -- model traffic split, not security-sensitive
 	}
 
-	randomNum := hosting.From(ctx).Rand(modelRewriteRandStream).IntN(int(totalWeight))
+	randomNum := modelRewriteIntN(ctx, int(totalWeight)) //#nosec G404 -- model traffic split, not security-sensitive
 	var currentWeight int32
 	for _, model := range models {
 		if model.Weight != nil {

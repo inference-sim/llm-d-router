@@ -49,6 +49,7 @@ import (
 	configapiv1 "github.com/llm-d/llm-d-router/apix/config/v1"
 	"github.com/llm-d/llm-d-router/internal/runnable"
 	"github.com/llm-d/llm-d-router/pkg/common"
+	"github.com/llm-d/llm-d-router/pkg/common/hosting"
 	logutil "github.com/llm-d/llm-d-router/pkg/common/observability/logging"
 	metricsutil "github.com/llm-d/llm-d-router/pkg/common/observability/metrics"
 	"github.com/llm-d/llm-d-router/pkg/common/observability/profiling"
@@ -1098,7 +1099,7 @@ func (r *Runner) initAdmissionControl(
 	}
 	endpointCandidates = requestcontrol.NewCachedEndpointCandidates(ctx, endpointCandidates, 50*time.Millisecond)
 	setupLog.Info("Initializing Flow Control layer")
-	registry := fcregistry.NewFlowRegistry(eppConfig.FlowControlConfig.Registry, setupLog)
+	registry := fcregistry.NewFlowRegistry(eppConfig.FlowControlConfig.Registry, setupLog, fcregistry.WithRuntime(hosting.From(ctx)))
 
 	deps := fccontroller.Deps{
 		Registry:            registry,
