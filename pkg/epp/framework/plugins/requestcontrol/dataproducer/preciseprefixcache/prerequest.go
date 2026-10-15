@@ -188,7 +188,7 @@ func (p *Producer) recordMMPrediction(ctx context.Context, request *scheduling.I
 // The cache and its background goroutine are bound to ctx.
 func buildSpeculativeCache(ctx context.Context, config PluginConfig,
 	index kvblock.Index,
-) (*ttlcache.Cache[string, *speculativeEntries], time.Duration, error) {
+) (speculativeStore, time.Duration, error) {
 	if !config.SpeculativeIndexing {
 		return nil, 0, nil
 	}
@@ -250,6 +250,7 @@ func (p *Producer) PreRequest(ctx context.Context,
 	// Produce writes state on every request, so the cleanup cannot sit behind
 	// the speculative-indexing gate.
 	defer p.pluginState.Delete(request.RequestID)
+	p.expireSpeculative()
 
 	ctx, span := tracing.Tracer(rcplugins.TracerScope).Start(ctx, "pre_request_precise_prefix_cache",
 		trace.WithSpanKind(trace.SpanKindInternal),
