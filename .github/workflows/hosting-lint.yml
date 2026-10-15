@@ -21,9 +21,12 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - name: No new direct clock, timer, goroutine or randomness use on router paths
+      # Type-checks the router packages (golang.org/x/tools/go/packages) and compares each direct
+      # use against hack/hosting-lint/baseline.txt, keyed per use (file, function, kind, line text).
+      - name: No new direct clock, timer, goroutine, randomness, map-order or HTTP use on router paths
         run: go run ./hack/hosting-lint
-      - name: Patch budget (lines changed in upstream files)
+      # Needs the full history (fetch-depth: 0 above) and the upstream fetch so upstream_base resolves.
+      - name: Patch budget (lines changed, renamed or deleted in upstream files)
         run: go run ./hack/hosting-lint -budget
       - name: Seam and converted packages
         run: go test ./pkg/common/hosting/... ./pkg/epp/requestcontrol/... ./pkg/epp/scheduling/... ./pkg/epp/datastore/... ./pkg/epp/datalayer/... ./pkg/epp/flowcontrol/... ./pkg/epp/framework/... ./pkg/epp/handlers/... ./cmd/epp/...
