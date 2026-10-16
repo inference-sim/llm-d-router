@@ -20,6 +20,7 @@ package scheduling
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -29,6 +30,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	errcommon "github.com/llm-d/llm-d-router/pkg/common/error"
+	"github.com/llm-d/llm-d-router/pkg/common/hosting"
 	logutil "github.com/llm-d/llm-d-router/pkg/common/observability/logging"
 	"github.com/llm-d/llm-d-router/pkg/common/observability/semconv"
 	"github.com/llm-d/llm-d-router/pkg/common/observability/tracing"
@@ -357,6 +359,14 @@ func (p *SchedulerProfile) runPickerPlugin(ctx context.Context, request *fwksche
 		storage[i] = fwksched.ScoredEndpoint{Endpoint: endpoint, Score: score}
 		scoredEndpoints[i] = &storage[i]
 		i++
+	}
+	if rt := hosting.From(ctx); rt.Hosted() {
+		// Map iteration order is the tie order pickers see. A hosted runtime replaces it with a
+		// seeded shuffle of a sorted order, which is uniformly random and reproducible.
+		slices.SortFunc(scoredEndpoints, func(a, b *fwksched.ScoredEndpoint) int {
+			return strings.Compare(a.GetMetadata().ID.String(), b.GetMetadata().ID.String())
+		})
+		rt.Rand("scheduler-map-order").Shuffle(n, func(a, b int) { scoredEndpoints[a], scoredEndpoints[b] = scoredEndpoints[b], scoredEndpoints[a] })
 	}
 	typedName := p.picker.TypedName()
 	debug := logger.V(logutil.DEBUG)

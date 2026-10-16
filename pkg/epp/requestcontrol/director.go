@@ -39,6 +39,7 @@ import (
 	apixv1 "github.com/llm-d/llm-d-router/apix/v1"
 	"github.com/llm-d/llm-d-router/apix/v1alpha2"
 	errcommon "github.com/llm-d/llm-d-router/pkg/common/error"
+	"github.com/llm-d/llm-d-router/pkg/common/hosting"
 	logutil "github.com/llm-d/llm-d-router/pkg/common/observability/logging"
 	"github.com/llm-d/llm-d-router/pkg/common/observability/tracing"
 	reqcommon "github.com/llm-d/llm-d-router/pkg/common/request"
@@ -467,10 +468,10 @@ func (d *Director) selectWeightedModel(ctx context.Context, models []v1alpha2.Ta
 
 	if totalWeight == 0 {
 		// If total weight is 0, distribute evenly
-		return models[rand.Intn(len(models))].ModelRewrite //#nosec G404 -- model traffic split, not security-sensitive
+		return models[modelRewriteIntN(ctx, len(models))].ModelRewrite //#nosec G404 -- model traffic split, not security-sensitive
 	}
 
-	randomNum := rand.Intn(int(totalWeight)) //#nosec G404 -- model traffic split, not security-sensitive
+	randomNum := modelRewriteIntN(ctx, int(totalWeight)) //#nosec G404 -- model traffic split, not security-sensitive
 	var currentWeight int32
 	for _, model := range models {
 		if model.Weight != nil {
@@ -644,6 +645,9 @@ func (d *Director) HandleResponseBody(ctx context.Context, reqCtx *handlers.Requ
 		// Run the final chunk synchronously so DynamicMetadata is available for the response.
 		d.runResponseBodyPlugins(ctx, reqCtx.SchedulingRequest, response, reqCtx.TargetPod)
 		reqCtx.Response.DynamicMetadata = response.DynamicMetadata
+	} else if hosting.From(ctx).Hosted() {
+		// A hosted runtime orders every call itself, so chunks run inline in arrival order.
+		d.runResponseBodyPlugins(ctx, reqCtx.SchedulingRequest, response, reqCtx.TargetPod)
 	} else {
 		// Get or create the async queue for this request.
 		work := responseBodyWork{

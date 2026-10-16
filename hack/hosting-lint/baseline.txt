@@ -1,0 +1,395 @@
+# Direct clock, timer, deadline, goroutine, randomness, map-iteration-order and outbound HTTP
+# uses on router paths that a review accepted. An entry is accepted for one of two reasons:
+#   - it cannot affect a routing decision in an embedded router (a latency metric, a log rate
+#     limit, a debug dump, an order-insensitive map walk), or
+#   - it runs only in a plugin or path the embedder refuses: the BLIS simulator rejects
+#     unsupported plugins at startup (sim/llmd/support.go), so their code never runs hosted.
+# It is NOT a claim that every entry is harmless in every embedding; a new embedder that admits
+# one of these plugins must convert its entries to hosting.Runtime first.
+#
+# One entry per distinct use: file, enclosing function ("<file>" for package scope), kind, count
+# of identical uses, and the use's source line (whitespace-collapsed), tab-separated. Line
+# numbers are deliberately absent, so unrelated edits do not churn the baseline.
+# Regenerate with: go run ./hack/hosting-lint -update
+cmd/epp/runner/rungroup.go	groupRunner.Run	errgroup.Group.Go	1	eg.Go(func() error {
+cmd/epp/runner/runner.go	Runner.setup	go-statement	1	go func() {
+cmd/epp/runner/runner.go	serveMetrics	context.WithTimeout	1	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), metricsShutdownTimeout)
+cmd/epp/runner/runner.go	serveMetrics	go-statement	1	go func() {
+cmd/epp/runner/runner.go	serveMetrics	range-map	1	for path, h := range profiling.PprofHandlers() {
+cmd/epp/runner/runner.go	serveWithDrain	go-statement	2	go func() {
+cmd/epp/runner/runner.go	serveWithDrain	time.After	1	case <-time.After(drainTimeout):
+pkg/common/certs.go	NewCertReloader	go-statement	1	go func() {
+pkg/common/certs.go	NewCertReloader	time.AfterFunc	1	debounceTimer = time.AfterFunc(debounceDelay, func() {
+pkg/common/envoy/headers.go	GenerateHeadersMutation	range-map	1	for key, value := range headers {
+pkg/common/envoy/metadata.go	ExtractMetadataValues	range-map	1	for key, val := range req.MetadataContext.FilterMetadata {
+pkg/common/observability/profiling/pprof.go	SetupPprofHandlers	range-map	1	for path, h := range PprofHandlers() {
+pkg/common/observability/toolcalling/fields.go	equalJSONValues	range-map	1	for key, value := range left {
+pkg/common/observability/tracing/grpc.go	grpcMetadataCarrier.Keys	range-map	1	for key := range c.metadata {
+pkg/common/request/tokens.go	referencesFile	range-map	1	for _, nested := range t {
+pkg/epp/config/loader/configloader.go	buildSchedulerConfig	range-map	1	for name, plugin := range handle.GetAllPluginsWithNames() {
+pkg/epp/config/loader/configloader.go	loadFeatureConfig	range-map	1	for gate, defaultValue := range registeredFeatureGates {
+pkg/epp/config/loader/defaults.go	ensureSchedulingLayer	range-map	1	for _, p := range allPlugins {
+pkg/epp/config/loader/defaults.go	ensureSchedulingLayer	range-map	2	for name, p := range allPlugins {
+pkg/epp/datalayer/collector.go	Collector.Start	go-statement	1	go c.run(ctx, ticker, ep, dispatchers)
+pkg/epp/datalayer/collector.go	NewTimeTicker	time.NewTicker	1	Ticker: time.NewTicker(d),
+pkg/epp/datalayer/cross_replica_publisher.go	crossReplicaPublisher.delete	context.WithTimeout	1	ctx, cancel := context.WithTimeout(ctx, p.publishTimeout)
+pkg/epp/datalayer/cross_replica_publisher.go	crossReplicaPublisher.publish	sync.WaitGroup.Go	1	wg.Go(func() {
+pkg/epp/datalayer/cross_replica_publisher.go	crossReplicaPublisher.publishAll	context.WithTimeout	1	dispatchCtx, cancel := context.WithTimeout(ctx, p.publishTimeout)
+pkg/epp/datalayer/cross_replica_publisher.go	crossReplicaPublisher.run	time.NewTicker	1	ticker := time.NewTicker(p.interval)
+pkg/epp/datalayer/cross_replica_publisher.go	crossReplicaPublisher.start	go-statement	1	go p.run(ctx)
+pkg/epp/datalayer/data_graph.go	CreateMissingDataProducers	range-map	1	for key := range consumer.Consumes().Optional {
+pkg/epp/datalayer/data_graph.go	CreateMissingDataProducers	range-map	1	for key := range consumer.Consumes().Required {
+pkg/epp/datalayer/data_graph.go	CreateMissingDataProducers	range-map	1	for key, consumerName := range missingKeys {
+pkg/epp/datalayer/data_graph.go	ValidateAndOrderDataDependencies	range-map	1	for _, consumer := range consumers {
+pkg/epp/datalayer/data_graph.go	ValidateAndOrderDataDependencies	range-map	1	for name, p := range pluginMap {
+pkg/epp/datalayer/data_graph.go	buildDAG	range-map	1	for _, consumer := range consumers {
+pkg/epp/datalayer/data_graph.go	buildDAG	range-map	1	for _, producer := range producers {
+pkg/epp/datalayer/data_graph.go	buildDAG	range-map	1	for cName, consumer := range consumers {
+pkg/epp/datalayer/data_graph.go	buildDAG	range-map	1	for pName, producer := range producers {
+pkg/epp/datalayer/data_graph.go	buildDAG	range-map	1	for producedKey, producedData := range producer.Produces() {
+pkg/epp/datalayer/data_graph.go	producedKeySet	range-map	1	for key := range producer.Produces() {
+pkg/epp/datalayer/endpoint_scope.go	buildScopeSpec	range-map	1	for key := range deps.Optional {
+pkg/epp/datalayer/endpoint_scope.go	buildScopeSpec	range-map	1	for key := range deps.Required {
+pkg/epp/datalayer/endpoint_scope.go	buildScopeSpec	range-map	1	for key := range produces {
+pkg/epp/datalayer/logger/logger.go	StartMetricsLogger	go-statement	1	go runDebugLogger(ctx, logger, datastore, stalenessThreshold)
+pkg/epp/datalayer/logger/logger.go	StartMetricsLogger	go-statement	1	go runPrometheusRefresher(ctx, logger, datastore, refreshInterval, stalenessThreshold)
+pkg/epp/datalayer/logger/logger.go	podsWithFreshMetrics	time.Since	1	return time.Since(ep.GetMetrics().UpdateTime) <= stalenessThreshold
+pkg/epp/datalayer/logger/logger.go	podsWithStaleMetrics	time.Since	1	return time.Since(ep.GetMetrics().UpdateTime) > stalenessThreshold
+pkg/epp/datalayer/logger/logger.go	runDebugLogger	time.NewTicker	1	ticker := time.NewTicker(debugPrintInterval)
+pkg/epp/datalayer/logger/logger.go	runPrometheusRefresher	time.NewTicker	1	ticker := time.NewTicker(interval)
+pkg/epp/datalayer/manager.go	collectorManager.StopAll	sync.Map.Range	1	cm.m.Range(func(_, v any) bool {
+pkg/epp/datalayer/manager.go	extractorMap.Range	range-map	1	for k, v := range e.m {
+pkg/epp/datalayer/manager.go	pollingDispatchers.Dispatchers	range-map	1	for k, v := range p.m {
+pkg/epp/datalayer/manager.go	variantSourceMap.Count	sync.Map.Range	1	m.m.Range(func(_, _ any) bool {
+pkg/epp/datalayer/manager.go	variantSourceMap.ForEach	sync.Map.Range	1	m.m.Range(func(k, raw any) bool {
+pkg/epp/datalayer/manager.go	variantSourceMap.IsEmpty	sync.Map.Range	1	m.m.Range(func(_, _ any) bool {
+pkg/epp/datalayer/manager.go	variantSourceMap.Range	sync.Map.Range	1	m.m.Range(func(k, raw any) bool {
+pkg/epp/datalayer/manager.go	variantSourceMap.Sources	sync.Map.Range	1	m.m.Range(func(_, raw any) bool {
+pkg/epp/datalayer/manager.go	variantSourceMap.findFirst	sync.Map.Range	1	m.m.Range(func(k, raw any) bool {
+pkg/epp/datalayer/runtime.go	Runtime.NewEndpoint	range-map	1	for _, d := range r.dispatchers.Dispatchers() {
+pkg/epp/datalayer/runtime.go	Runtime.findSourceByType	range-map	1	for name, disp := range r.dispatchers.Dispatchers() {
+pkg/epp/datalayer/runtime.go	Runtime.validateNoCrossVariantCollisions	range-map	1	for name, disp := range r.dispatchers.Dispatchers() {
+pkg/epp/datastore/datastore.go	datastore.Clear	sync.Map.Range	1	ds.pods.Range(func(_, v any) bool {
+pkg/epp/datastore/datastore.go	datastore.ObjectiveGetAll	range-map	1	for _, v := range ds.objectives {
+pkg/epp/datastore/datastore.go	datastore.PodDelete	sync.Map.Range	1	ds.pods.Range(func(k, v any) bool {
+pkg/epp/datastore/datastore.go	datastore.PodList	sync.Map.Range	1	ds.pods.Range(func(k, v any) bool {
+pkg/epp/datastore/datastore.go	datastore.podResyncAll	sync.Map.Range	1	ds.pods.Range(func(k, v any) bool {
+pkg/epp/datastore/modelrewritestore.go	modelRewriteStore.deleteInternal	range-map	1	for modelName, rulesWithMd := range ms.rulesByExactModelMatch {
+pkg/epp/datastore/modelrewritestore.go	modelRewriteStore.getAll	range-map	1	for _, rewrite := range ms.allReWrites {
+pkg/epp/datastore/modelrewritestore.go	modelRewriteStore.set	range-map	1	for model := range ms.rulesByExactModelMatch {
+pkg/epp/datastore/modelrewritestore.go	modelRewriteStore.set	range-map	1	for model := range ruleWithMetadata.exactModels() {
+pkg/epp/flowcontrol/contracts/mocks/mocks.go	MockManagedQueue.ByteSize	range-map	1	for _, item := range m.items {
+pkg/epp/flowcontrol/contracts/mocks/mocks.go	MockManagedQueue.Cleanup	range-map	1	for handle, item := range m.items {
+pkg/epp/flowcontrol/contracts/mocks/mocks.go	MockManagedQueue.Drain	range-map	1	for _, item := range m.items {
+pkg/epp/flowcontrol/contracts/mocks/mocks.go	MockManagedQueue.Peek	range-map	1	for _, item := range m.items {
+pkg/epp/flowcontrol/controller/internal/item.go	FlowItem.finalizeInternal	time.Since	1	duration := time.Since(fi.enqueueTime)
+pkg/epp/flowcontrol/controller/internal/processor.go	Processor.dispatchCycle	time.Now	1	dispatchCycleStart := time.Now()
+pkg/epp/flowcontrol/controller/internal/processor.go	Processor.dispatchCycle	time.Since	1	metrics.RecordFlowControlDispatchCycleDuration(time.Since(dispatchCycleStart))
+pkg/epp/flowcontrol/controller/internal/processor.go	Processor.enqueue	time.Now	1	startTime := time.Now()
+pkg/epp/flowcontrol/controller/internal/processor.go	Processor.enqueue	time.Since	1	metrics.RecordFlowControlRequestEnqueueDuration(key.ID, priorityStr, outcomeStr, time.Since(startTime))
+pkg/epp/flowcontrol/controller/internal/processor.go	Processor.processAllQueuesConcurrently	sync.WaitGroup.Go	1	wg.Go(func() {
+pkg/epp/flowcontrol/controller/internal/reclamation.go	ReclamationController.sweepTimeoutsLocked	range-map	1	for requestID, r := range c.outstanding {
+pkg/epp/flowcontrol/registry/config.go	Config.Clone	range-map	1	for prio, band := range c.PriorityBands {
+pkg/epp/flowcontrol/registry/config.go	Config.validate	range-map	1	for _, band := range c.PriorityBands {
+pkg/epp/flowcontrol/registry/config.go	NewConfig	range-map	1	for _, band := range builder.config.PriorityBands {
+pkg/epp/flowcontrol/registry/hosted.go	priorityBandAccessor.iterateQueuesInOrder	sync.Map.Range	1	a.band.activeQueues.Range(func(k, v any) bool {
+pkg/epp/flowcontrol/registry/leasing.go	collectLeasedResources	sync.Map.Range	1	m.Range(func(key, value any) bool {
+pkg/epp/flowcontrol/registry/registry.go	FlowRegistry.ApplyDesiredPriorities	range-map	1	for priority := range desired {
+pkg/epp/flowcontrol/registry/registry.go	FlowRegistry.ApplyDesiredPriorities	range-map	1	for priority := range desiredCopy {
+pkg/epp/flowcontrol/registry/registry.go	FlowRegistry.ApplyDesiredPriorities	range-map	1	for priority := range fr.config.PriorityBands {
+pkg/epp/flowcontrol/registry/registry.go	FlowRegistry.Stats	sync.Map.Range	1	fr.priorityBands.Range(func(key, value any) bool {
+pkg/epp/flowcontrol/registry/registry.go	FlowRegistry.SubmitDesiredPriorities	range-map	1	for priority := range desired {
+pkg/epp/flowcontrol/registry/registry.go	NewFlowRegistry	clock.RealClock	1	fr.clock = &clock.RealClock{}
+pkg/epp/flowcontrol/registry/registry.go	NewFlowRegistry	range-map	1	for prio, bandConfig := range cfg.PriorityBands {
+pkg/epp/flowcontrol/registry/registry_helpers.go	priorityBandAccessor.FlowKeys	range-map	1	for id := range a.band.queues {
+pkg/epp/flowcontrol/registry/registry_helpers.go	priorityBandAccessor.IterateQueues	sync.Map.Range	1	a.band.activeQueues.Range(func(_, v any) bool {
+pkg/epp/framework/interface/datalayer/attributemap.go	Attributes.Clone	sync.Map.Range	1	a.data.Range(func(key, value any) bool {
+pkg/epp/framework/interface/datalayer/attributemap.go	Attributes.Keys	sync.Map.Range	1	a.data.Range(func(key, _ any) bool {
+pkg/epp/framework/interface/datalayer/registry.go	BuildRegistry	range-map	1	for dk, val := range prod.Produces() {
+pkg/epp/framework/interface/datalayer/registry.go	Registry.Keys	range-map	1	for k := range r.types {
+pkg/epp/framework/interface/datalayer/registry.go	Registry.ValidateConsumer	range-map	1	for dk, val := range deps.Optional {
+pkg/epp/framework/interface/datalayer/registry.go	Registry.ValidateConsumer	range-map	1	for dk, val := range deps.Required {
+pkg/epp/framework/interface/plugin/handle.go	eppHandlePlugins.GetAllPlugins	range-map	1	for _, plugin := range h.plugins {
+pkg/epp/framework/interface/plugin/plugin_state.go	PluginState.Delete	sync.Map.Range	1	stateData.Range(func(k, _ any) bool {
+pkg/epp/framework/interface/plugin/plugin_state_hosted.go	PluginState.rangeLastAccess	sync.Map.Range	1	s.requestToLastAccessTime.Range(f)
+pkg/epp/framework/interface/plugin/plugin_state_hosted.go	PluginState.rangeLastAccess	sync.Map.Range	1	s.requestToLastAccessTime.Range(func(k, _ any) bool {
+pkg/epp/framework/interface/requesthandling/types.go	GenerateRequest.String	range-map	1	for k := range r.Features.MMHashes {
+pkg/epp/framework/interface/requesthandling/types.go	GenerateRequest.setGenerateRequestFeatures	range-map	1	for modality, placeholders := range features.MMPlaceholders {
+pkg/epp/framework/interface/scheduling/attributes.go	InferenceRequest.AttributeKeys	sync.Map.Range	1	r.attributes.Range(func(k, _ any) bool {
+pkg/epp/framework/observability/multimodal/multimodal.go	Summary	range-map	1	for m := range seen {
+pkg/epp/framework/plugins/datalayer/cross_plugin/redis/redis_syncer.go	RedisSyncer.get	time.Now	1	if !entry.expiresAt.After(time.Now()) {
+pkg/epp/framework/plugins/datalayer/cross_plugin/redis/redis_syncer.go	RedisSyncer.set	maps.Keys	1	for _, field := range slices.Sorted(maps.Keys(raw)) {
+pkg/epp/framework/plugins/datalayer/cross_plugin/redis/redis_syncer.go	RedisSyncer.set	time.Now	1	now := time.Now()
+pkg/epp/framework/plugins/datalayer/cross_plugin/redis/redis_syncer.go	RedisSyncerFactory	uuid.NewString	1	replicaID := hostname + "-" + uuid.NewString()
+pkg/epp/framework/plugins/datalayer/discovery/file/plugin.go	FileDiscovery.DumpState	range-map	1	for id := range f.endpoints {
+pkg/epp/framework/plugins/datalayer/discovery/file/plugin.go	FileDiscovery.load	range-map	1	for id := range old {
+pkg/epp/framework/plugins/datalayer/extractor/label/producer.go	Producer.Extract	range-map	1	for key, label := range p.labels {
+pkg/epp/framework/plugins/datalayer/extractor/label/producer.go	Producer.Produces	range-map	1	for key := range p.labels {
+pkg/epp/framework/plugins/datalayer/extractor/metrics/mapping_registry.go	MappingRegistry.ListEngineTypes	range-map	1	for engineType := range r.mappings {
+pkg/epp/framework/plugins/datalayer/extractor/metrics/mapping_registry.go	MappingRegistry.Mappings	range-map	1	for _, mapping := range r.mappings {
+pkg/epp/framework/plugins/datalayer/extractor/metrics/spec.go	Spec.labelsMatch	range-map	1	for name, value := range spec.Labels {
+pkg/epp/framework/plugins/datalayer/extractor/topology/extractor.go	podNotificationHandler.Extract	range-map	1	for _, ep := range h.ext.endpoints[key] {
+pkg/epp/framework/plugins/datalayer/source/http/client.go	client.Get	http.Client.Do	1	resp, err = cl.Do(req) //#nosec -- target URL is constructed from operator endpoint metadata
+pkg/epp/framework/plugins/flowcontrol/fairness/program-aware/plugin.go	ProgramAwarePlugin.DumpState	sync.Map.Range	1	p.programMetrics.Range(func(_, value any) bool {
+pkg/epp/framework/plugins/flowcontrol/fairness/program-aware/plugin.go	ProgramAwarePlugin.ResponseBody	time.Now	1	metrics.RecordCompletion(time.Now())
+pkg/epp/framework/plugins/flowcontrol/fairness/program-aware/plugin.go	ProgramAwarePlugin.computeFairnessIndex	sync.Map.Range	1	p.programMetrics.Range(func(_, value any) bool {
+pkg/epp/framework/plugins/flowcontrol/fairness/program-aware/plugin.go	ProgramAwarePlugin.evictIdle	sync.Map.Range	1	p.programMetrics.Range(func(key, value any) bool {
+pkg/epp/framework/plugins/flowcontrol/fairness/program-aware/plugin.go	ProgramAwarePlugin.evictIdle	time.Now	1	now := time.Now()
+pkg/epp/framework/plugins/flowcontrol/fairness/program-aware/plugin.go	ProgramAwarePlugin.getOrCreateMetrics	time.Now	1	fresh := &ProgramMetrics{lastCompletionTime: time.Now()}
+pkg/epp/framework/plugins/flowcontrol/fairness/program-aware/plugin.go	ProgramAwarePlugin.runEviction	time.NewTicker	1	ticker := time.NewTicker(interval)
+pkg/epp/framework/plugins/flowcontrol/fairness/program-aware/plugin.go	ProgramAwarePluginFactory	go-statement	1	go p.runEviction(handle.Context(), interval, ttl)
+pkg/epp/framework/plugins/flowcontrol/fairness/program-aware/programmetrics.go	ProgramMetrics.RecordDispatched	time.Since	1	waitMs := float64(time.Since(enqueueTime).Milliseconds())
+pkg/epp/framework/plugins/flowcontrol/fairness/program-aware/strategy_las.go	LASStrategy.OnCompleted	time.Now	1	service := s.getOrCreateState(id).AddService(cost, time.Now(), s.halfLifeSeconds)
+pkg/epp/framework/plugins/flowcontrol/fairness/program-aware/strategy_las.go	LASStrategy.Pick	range-map	1	for id, e := range entries {
+pkg/epp/framework/plugins/flowcontrol/fairness/program-aware/strategy_las.go	LASStrategy.Pick	range-map	1	for id, qi := range queues {
+pkg/epp/framework/plugins/flowcontrol/fairness/program-aware/strategy_las.go	LASStrategy.Pick	time.Now	1	now := time.Now()
+pkg/epp/framework/plugins/flowcontrol/fairness/program-aware/strategy_las.go	LASStrategy.Pick	time.Since	1	headWaitMs = float64(time.Since(head.EnqueueTime()).Milliseconds())
+pkg/epp/framework/plugins/flowcontrol/fairness/program-aware/strategy_turnpriority.go	turnPriorityStrategy.Pick	range-map	1	for _, qi := range queues {
+pkg/epp/framework/plugins/flowcontrol/fairness/program-aware/strategy_turnpriority.go	turnPriorityStrategy.Pick	time.Now	1	now := time.Now()
+pkg/epp/framework/plugins/flowcontrol/saturationdetector/composite/detector.go	MaxSaturationDetectorConfigParser	range-map	1	for childName, stages := range cfg.Stages {
+pkg/epp/framework/plugins/flowcontrol/saturationdetector/utilization/detector.go	Detector.maybeLogStaleEndpoints	time.Now	1	now := time.Now().UnixNano()
+pkg/epp/framework/plugins/flowcontrol/usagelimits/priorityholdback/config.go	validateExplicitConfig	range-map	1	for p, c := range cfg.Ceilings {
+pkg/epp/framework/plugins/flowcontrol/usagelimits/priorityholdback/priority_holdback.go	buildExplicitAnchors	range-map	1	for p, c := range ceilings {
+pkg/epp/framework/plugins/requestcontrol/admitter/probabilisticadmitter/plugin.go	newAdmitter	rand.Float64	1	randFn: rand.Float64,
+pkg/epp/framework/plugins/requestcontrol/dataproducer/approximateprefix/indexer.go	indexer.PodBlockCounts	range-map	1	for pod, pc := range caches {
+pkg/epp/framework/plugins/requestcontrol/dataproducer/approximateprefix/indexer.go	indexer.Pods	range-map	1	for pod := range i.pods {
+pkg/epp/framework/plugins/requestcontrol/dataproducer/approximateprefix/indexer.go	indexer.reportOnce	range-map	1	for pod, size := range counts {
+pkg/epp/framework/plugins/requestcontrol/dataproducer/approximateprefix/plugin.go	dataProducer.Produce	range-map	1	for server, blocks := range prefixCacheServers {
+pkg/epp/framework/plugins/requestcontrol/dataproducer/approximateprefix/plugin.go	dataProducer.snapshotState	range-map	1	for pod, blocks := range counts {
+pkg/epp/framework/plugins/requestcontrol/dataproducer/approximateprefix/types.go	SchedulingContextState.Clone	range-map	1	for key, value := range s.PredictedCachedTokens {
+pkg/epp/framework/plugins/requestcontrol/dataproducer/approximateprefix/types.go	SchedulingContextState.Clone	range-map	1	for key, value := range s.PrefixCacheServers {
+pkg/epp/framework/plugins/requestcontrol/dataproducer/burstprefix/assign.go	assign	range-map	1	for key := range counts {
+pkg/epp/framework/plugins/requestcontrol/dataproducer/burstprefix/assign.go	batchIndex.longestPrefix	range-map	1	for name := range holders {
+pkg/epp/framework/plugins/requestcontrol/dataproducer/burstprefix/assign.go	sharedPrefixKeys	range-map	1	for key, s := range keySig {
+pkg/epp/framework/plugins/requestcontrol/dataproducer/burstprefix/plugin.go	dataProducer.Produce	time.AfterFunc	1	time.AfterFunc(p.window, func() { p.seal(b) })
+pkg/epp/framework/plugins/requestcontrol/dataproducer/burstprefix/plugin.go	dataProducer.Produce	time.Now	1	e := &entry{hashes: hashes, pods: pods, enqueued: time.Now()}
+pkg/epp/framework/plugins/requestcontrol/dataproducer/burstprefix/plugin.go	dataProducer.Produce	time.Since	1	log.FromContext(ctx).V(logutil.DEBUG).Info("burst batch sealed", "wait_ms", time.Since(e.enqueued).Milliseconds())
+pkg/epp/framework/plugins/requestcontrol/dataproducer/inflightload/producer.go	InFlightLoadProducer.PreRequest	range-map	1	for profileName, profileResult := range result.ProfileResults {
+pkg/epp/framework/plugins/requestcontrol/dataproducer/inflightload/producer.go	InFlightLoadProducer.ResponseBody	range-map	1	for profileName, profileResult := range result.ProfileResults {
+pkg/epp/framework/plugins/requestcontrol/dataproducer/inflightload/producer.go	InFlightLoadProducer.snapshotState	range-map	1	for endpointID := range endpointSet {
+pkg/epp/framework/plugins/requestcontrol/dataproducer/inflightload/producer.go	InFlightLoadProducer.snapshotState	range-map	1	for endpointID := range requestCounts {
+pkg/epp/framework/plugins/requestcontrol/dataproducer/inflightload/producer.go	InFlightLoadProducer.snapshotState	range-map	1	for endpointID := range tokenCounts {
+pkg/epp/framework/plugins/requestcontrol/dataproducer/inflightload/producer.go	concurrencyTracker.snapshot	range-map	1	for endpointID, counter := range t.counts {
+pkg/epp/framework/plugins/requestcontrol/dataproducer/latencyobserver/flush.go	Observer.Dispatch	time.Now	1	p.publish(ctx, id, p.stateFor(id), time.Now())
+pkg/epp/framework/plugins/requestcontrol/dataproducer/latencyobserver/hooks.go	Observer.PreRequest	time.Now	1	dispatchedAt: time.Now(),
+pkg/epp/framework/plugins/requestcontrol/dataproducer/latencyobserver/hooks.go	Observer.observeFirstChunk	time.Now	1	now := time.Now()
+pkg/epp/framework/plugins/requestcontrol/dataproducer/latencyobserver/plugin.go	Observer.snapshotDebugState	range-map	1	for id, state := range p.state {
+pkg/epp/framework/plugins/requestcontrol/dataproducer/multimodal/cache.go	podCache.keys	range-map	1	for hash := range c.entries {
+pkg/epp/framework/plugins/requestcontrol/dataproducer/multimodal/prerequest.go	placementState.OnEvicted	go-statement	1	go s.producer.completePlacements(requestID, s.placements, false)
+pkg/epp/framework/plugins/requestcontrol/dataproducer/multimodal/producer.go	New	go-statement	1	go p.cleanupLoop(ctx)
+pkg/epp/framework/plugins/requestcontrol/dataproducer/multimodal/producer.go	Producer.DumpState	range-map	1	for pod, cache := range p.caches {
+pkg/epp/framework/plugins/requestcontrol/dataproducer/multimodal/producer.go	Producer.cleanupLoop	time.NewTicker	1	ticker := time.NewTicker(podCleanupInterval)
+pkg/epp/framework/plugins/requestcontrol/dataproducer/multimodal/producer.go	Producer.recordItemLookups	range-map	1	for pod, podCache := range p.caches {
+pkg/epp/framework/plugins/requestcontrol/dataproducer/multimodal/producer.go	Producer.removeStalePods	range-map	1	for pod := range p.caches {
+pkg/epp/framework/plugins/requestcontrol/dataproducer/multimodal/producer.go	itemSlice	range-map	1	for _, item := range itemsByHash {
+pkg/epp/framework/plugins/requestcontrol/dataproducer/multimodal/producer.go	itemsFromGenerateFeatures	range-map	1	for modality := range mmHashes {
+pkg/epp/framework/plugins/requestcontrol/dataproducer/preciseprefixcache/blockkeys.go	multimodalBlockIndices	range-map	1	for i := range seen {
+pkg/epp/framework/plugins/requestcontrol/dataproducer/preciseprefixcache/prerequest.go	buildSpeculativeCache	go-statement	1	go cache.Start()
+pkg/epp/framework/plugins/requestcontrol/dataproducer/preciseprefixcache/prerequest.go	buildSpeculativeCache	go-statement	1	go func() {
+pkg/epp/framework/plugins/requestcontrol/dataproducer/preciseprefixcache/prerequest.go	buildSpeculativeCache	ttlcache.Cache.Start	1	go cache.Start()
+pkg/epp/framework/plugins/requestcontrol/dataproducer/preciseprefixcache/prerequest.go	buildSpeculativeCache	ttlcache.New	1	cache := ttlcache.New[string, *speculativeEntries](
+pkg/epp/framework/plugins/requestcontrol/dataproducer/preciseprefixcache/producer.go	New	go-statement	1	go indexer.Run(ctx)
+pkg/epp/framework/plugins/requestcontrol/dataproducer/preciseprefixcache/producer.go	Producer.produceFromBlockKeys	range-map	2	for pod, m := range promptMatches {
+pkg/epp/framework/plugins/requestcontrol/dataproducer/preciseprefixcache/producer.go	addPodMatch	range-map	1	for tier, count := range b.BlocksByTier {
+pkg/epp/framework/plugins/requestcontrol/dataproducer/predictedlatency/latencypredictorclient/coalescer.go	Predictor.coalesceDispatcher	go-statement	1	go func() {
+pkg/epp/framework/plugins/requestcontrol/dataproducer/predictedlatency/latencypredictorclient/coalescer.go	Predictor.coalesceDispatcher	time.NewTimer	1	timer = time.NewTimer(p.config.CoalesceWindow)
+pkg/epp/framework/plugins/requestcontrol/dataproducer/predictedlatency/latencypredictorclient/coalescer.go	Predictor.dispatchBatch	context.WithTimeout	1	ctx, cancel := context.WithTimeout(context.Background(), p.config.HTTPTimeout)
+pkg/epp/framework/plugins/requestcontrol/dataproducer/predictedlatency/latencypredictorclient/coalescer.go	Predictor.doPredictBulkStrictHTTP	http.Client.Do	1	resp, err := p.httpClient.Do(req) //#nosec -- URL is operator-configured in config.PredictionURLs
+pkg/epp/framework/plugins/requestcontrol/dataproducer/predictedlatency/latencypredictorclient/latencypredictor_async.go	New	go-statement	1	go p.backgroundLoop()
+pkg/epp/framework/plugins/requestcontrol/dataproducer/predictedlatency/latencypredictorclient/latencypredictor_async.go	New	go-statement	1	go p.coalesceDispatcher()
+pkg/epp/framework/plugins/requestcontrol/dataproducer/predictedlatency/latencypredictorclient/latencypredictor_async.go	Predictor.backgroundLoop	context.WithTimeout	2	ctx, cancel := context.WithTimeout(context.Background(), p.config.HTTPTimeout)
+pkg/epp/framework/plugins/requestcontrol/dataproducer/predictedlatency/latencypredictorclient/latencypredictor_async.go	Predictor.backgroundLoop	time.NewTicker	1	flushTicker := time.NewTicker(p.config.FlushInterval)
+pkg/epp/framework/plugins/requestcontrol/dataproducer/predictedlatency/latencypredictorclient/latencypredictor_async.go	Predictor.backgroundLoop	time.NewTicker	1	metricsTicker := time.NewTicker(p.config.MetricsRefreshInterval)
+pkg/epp/framework/plugins/requestcontrol/dataproducer/predictedlatency/latencypredictorclient/metrics.go	Predictor.GetMetrics	http.Client.Do	1	resp, err := p.httpClient.Do(req) //#nosec -- URL is operator-configured in config.TrainingURL
+pkg/epp/framework/plugins/requestcontrol/dataproducer/predictedlatency/latencypredictorclient/prediction.go	Predictor.PredictBulk	http.Client.Do	1	resp, err := p.httpClient.Do(req) //#nosec -- operator-config URL via config.PredictionURLs
+pkg/epp/framework/plugins/requestcontrol/dataproducer/predictedlatency/latencypredictorclient/prediction.go	Predictor.getRandomPredictionURL	rand.IntN	1	index := rand.IntN(len(p.config.PredictionURLs)) //#nosec -- non-crypto load-balancing pick across configured URLs
+pkg/epp/framework/plugins/requestcontrol/dataproducer/predictedlatency/latencypredictorclient/prediction.go	Predictor.predictBayesianRidge	time.Now	1	PredictedAt: time.Now(),
+pkg/epp/framework/plugins/requestcontrol/dataproducer/predictedlatency/latencypredictorclient/prediction.go	Predictor.predictHTTP	http.Client.Do	1	resp, err := p.httpClient.Do(httpReq) //#nosec -- operator-config URL via config.PredictionURLs
+pkg/epp/framework/plugins/requestcontrol/dataproducer/predictedlatency/latencypredictorclient/prediction.go	Predictor.refreshServerStatus	http.Client.Do	1	resp, err := p.httpClient.Do(req) //#nosec -- operator-config URL via config.TrainingURL
+pkg/epp/framework/plugins/requestcontrol/dataproducer/predictedlatency/latencypredictorclient/training.go	NewTrainingEntry	time.Now	1	Timestamp: time.Now(),
+pkg/epp/framework/plugins/requestcontrol/dataproducer/predictedlatency/latencypredictorclient/training.go	Predictor.flushTraining	http.Client.Do	1	resp, err := p.httpClient.Do(req) //#nosec -- operator-config URL via config.TrainingURL
+pkg/epp/framework/plugins/requestcontrol/dataproducer/predictedlatency/latencypredictorclient/training.go	Predictor.getXGBoostTrees	http.Client.Do	1	tpotResp, err := p.httpClient.Do(tpotReq) //#nosec -- operator-config URL via config.TrainingURL
+pkg/epp/framework/plugins/requestcontrol/dataproducer/predictedlatency/latencypredictorclient/training.go	Predictor.getXGBoostTrees	http.Client.Do	1	ttftResp, err := p.httpClient.Do(ttftReq) //#nosec -- operator-config URL via config.TrainingURL
+pkg/epp/framework/plugins/requestcontrol/dataproducer/predictedlatency/latencypredictorclient/training.go	Predictor.refreshModelInfo	http.Client.Do	1	resp, err := p.httpClient.Do(req) //#nosec -- operator-config URL via config.TrainingURL
+pkg/epp/framework/plugins/requestcontrol/dataproducer/predictedlatency/latencypredictorclient/training.go	Predictor.sampleFromSlice	rand.Shuffle	1	rand.Shuffle(len(sample), func(i, j int) { //#nosec -- non-crypto sampling for training-set order
+pkg/epp/framework/plugins/requestcontrol/dataproducer/predictedlatency/plugin.go	NewPredictedLatency	go-statement	1	go predictedLatency.sloContextStore.Start()
+pkg/epp/framework/plugins/requestcontrol/dataproducer/predictedlatency/plugin.go	NewPredictedLatency	ttlcache.Cache.Start	1	go predictedLatency.sloContextStore.Start()
+pkg/epp/framework/plugins/requestcontrol/dataproducer/predictedlatency/plugin.go	NewPredictedLatency	ttlcache.New	1	predictedLatency.sloContextStore = ttlcache.New(
+pkg/epp/framework/plugins/requestcontrol/dataproducer/predictedlatency/plugin.go	PredictedLatency.snapshotState	range-map	1	for id, a := range endpoints {
+pkg/epp/framework/plugins/requestcontrol/dataproducer/predictedlatency/plugin.go	PredictedLatency.snapshotState	sync.Map.Range	1	pl.runningRequestLists.Range(func(key, value any) bool {
+pkg/epp/framework/plugins/requestcontrol/dataproducer/predictedlatency/plugin.go	startPredictor	context.WithTimeout	1	stopCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+pkg/epp/framework/plugins/requestcontrol/dataproducer/predictedlatency/plugin.go	startPredictor	go-statement	1	go func() {
+pkg/epp/framework/plugins/requestcontrol/dataproducer/predictedlatency/requestcontrol_hooks.go	PredictedLatency.PreRequest	time.Now	1	predictedLatencyCtx.requestReceivedTimestamp = time.Now()
+pkg/epp/framework/plugins/requestcontrol/dataproducer/predictedlatency/requestcontrol_hooks.go	PredictedLatency.ResponseBody	time.Now	1	now := time.Now()
+pkg/epp/framework/plugins/requestcontrol/dataproducer/predictedlatency/requestcontrol_hooks.go	processPreRequestForLatencyPrediction	time.Now	1	predictedLatencyCtx.lastTokenTimestamp = time.Now()
+pkg/epp/framework/plugins/requestcontrol/dataproducer/predictedlatency/training.go	bulkPredictWithMetrics	time.Now	1	start := time.Now()
+pkg/epp/framework/plugins/requestcontrol/dataproducer/predictedlatency/training.go	bulkPredictWithMetrics	time.Since	1	duration := time.Since(start)
+pkg/epp/framework/plugins/requestcontrol/dataproducer/predictedlatency/training.go	refreshLastSeenMetrics	range-map	1	for profileName, profileResult := range sr.ProfileResults {
+pkg/epp/framework/plugins/requestcontrol/dataproducer/sessionstate/producer.go	Factory	go-statement	1	go p.runEviction(handle.Context())
+pkg/epp/framework/plugins/requestcontrol/dataproducer/sessionstate/producer.go	Producer.runEviction	time.NewTicker	1	ticker := time.NewTicker(p.evictionSweepInterval)
+pkg/epp/framework/plugins/requestcontrol/dataproducer/sessionstate/producer.go	Producer.runEviction	time.Now	1	p.evictIdle(time.Now())
+pkg/epp/framework/plugins/requestcontrol/dataproducer/sessionstate/registry.go	SessionStateRegistry.EvictIdle	range-map	1	for identity, record := range r.sessions {
+pkg/epp/framework/plugins/requestcontrol/dataproducer/sessionstate/registry.go	SessionStateRegistry.GetState	time.Now	1	now := time.Now()
+pkg/epp/framework/plugins/requestcontrol/dataproducer/sessionstate/registry.go	SessionStateRegistry.RecordDispatch	time.Now	1	now := time.Now()
+pkg/epp/framework/plugins/requestcontrol/dataproducer/tokenizer/endpoint_discovery.go	discoveredEndpointPicker.PickExcluding	range-map	1	for _, c := range p.capabilities {
+pkg/epp/framework/plugins/requestcontrol/dataproducer/tokenizer/endpoint_discovery.go	discoveredEndpointPicker.PickExcluding	time.Now	1	now := time.Now()
+pkg/epp/framework/plugins/requestcontrol/dataproducer/tokenizer/endpoint_discovery.go	discoveredEndpointPicker.rebuildOrdered	range-map	1	for id := range p.endpoints {
+pkg/epp/framework/plugins/requestcontrol/dataproducer/tokenizer/model_limits.go	discoveredEndpointPicker.refreshModelLimits	context.WithTimeout	1	probeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+pkg/epp/framework/plugins/requestcontrol/dataproducer/tokenizer/model_limits.go	discoveredEndpointPicker.refreshModelLimits	go-statement	1	go func(id string, c *renderCapability) {
+pkg/epp/framework/plugins/requestcontrol/dataproducer/tokenizer/model_limits.go	discoveredEndpointPicker.refreshModelLimits	range-map	1	for id, c := range p.capabilities {
+pkg/epp/framework/plugins/requestcontrol/dataproducer/tokenizer/model_limits.go	discoveredEndpointPicker.refreshModelLimits	range-map	1	for id, c := range snapshot {
+pkg/epp/framework/plugins/requestcontrol/dataproducer/tokenizer/model_limits.go	discoveredEndpointPicker.refreshModelLimits	time.Now	1	c.refreshed = time.Now()
+pkg/epp/framework/plugins/requestcontrol/dataproducer/tokenizer/model_limits.go	discoveredEndpointPicker.watchModelLimits	time.NewTicker	1	ticker := time.NewTicker(30 * time.Second)
+pkg/epp/framework/plugins/requestcontrol/dataproducer/tokenizer/model_limits.go	readModelLimit	http.Client.Do	1	resp, err := client.Do(req)
+pkg/epp/framework/plugins/requestcontrol/dataproducer/tokenizer/tokenizer.go	NewPlugin	go-statement	1	go endpointPicker.watchModelLimits(ctx, renderer.client, config.ModelName)
+pkg/epp/framework/plugins/requestcontrol/dataproducer/tokenizer/tokenizer.go	convertMMFeaturesToUpstream	range-map	1	for modality, hashes := range src.MMHashes {
+pkg/epp/framework/plugins/requestcontrol/dataproducer/tokenizer/vllm_http.go	toKVCacheMM	range-map	1	for k, prs := range f.MMPlaceholders {
+pkg/epp/framework/plugins/requestcontrol/dataproducer/tokenizer/vllm_http.go	vllmHTTPRenderer.postJSON	context.WithTimeout	1	reqCtx, cancel := context.WithTimeout(ctx, timeout)
+pkg/epp/framework/plugins/requestcontrol/dataproducer/tokenizer/vllm_http.go	vllmHTTPRenderer.postJSON	time.Now	1	start := time.Now()
+pkg/epp/framework/plugins/requestcontrol/dataproducer/tokenizer/vllm_http.go	vllmHTTPRenderer.postJSON	time.Since	1	defer func() { r.observeRender(ctx, path, timeout, time.Since(start), err) }()
+pkg/epp/framework/plugins/requestcontrol/dataproducer/tokenizer/vllm_http.go	vllmHTTPRenderer.postJSONAttempt	context.WithTimeout	1	reqCtx, cancel = context.WithTimeout(reqCtx, r.attemptTimeout)
+pkg/epp/framework/plugins/requestcontrol/dataproducer/tokenizer/vllm_http.go	vllmHTTPRenderer.postJSONAttempt	http.Client.Do	1	httpResp, err := r.client.Do(httpReq)
+pkg/epp/framework/plugins/requestcontrol/screener/disaggregatedsetrollout/metrics.go	recordRevisionGatingShares	range-map	1	for revision := range current.roleCounts {
+pkg/epp/framework/plugins/requestcontrol/screener/disaggregatedsetrollout/metrics.go	recordRevisionGatingShares	range-map	1	for revision := range previous.roleCounts {
+pkg/epp/framework/plugins/requestcontrol/screener/disaggregatedsetrollout/plugin.go	Screener.rebuildDistributionLocked	range-map	1	for _, pod := range c.pods {
+pkg/epp/framework/plugins/requestcontrol/screener/disaggregatedsetrollout/plugin.go	dominantRole	range-map	1	for _, perRole := range covered {
+pkg/epp/framework/plugins/requestcontrol/screener/disaggregatedsetrollout/plugin.go	newRevisionDistribution	range-map	1	for _, weight := range weights {
+pkg/epp/framework/plugins/requestcontrol/screener/disaggregatedsetrollout/plugin.go	newRevisionDistribution	range-map	2	for revision, perRole := range covered {
+pkg/epp/framework/plugins/requestcontrol/screener/disaggregatedsetrollout/plugin.go	newRevisionDistribution	range-map	1	for revision, perRole := range roleCounts {
+pkg/epp/framework/plugins/requestcontrol/screener/disaggregatedsetrollout/plugin.go	newRevisionDistribution	range-map	1	for revision, weight := range weights {
+pkg/epp/framework/plugins/requestcontrol/screener/disaggregatedsetrollout/screener.go	Screener.Screen	rand.Float64	1	chosenRevision = pickWeightedRevision(shares, rand.Float64()) //#nosec G404 -- traffic split across revisions, not security-sensitive
+pkg/epp/framework/plugins/requestcontrol/screener/disaggregatedsetrollout/screener.go	Screener.Screen	range-map	1	for revision := range seenRevisions {
+pkg/epp/framework/plugins/requestcontrol/screener/disaggregatedsetrollout/screener.go	pickWeightedRevision	range-map	1	for revision, share := range shares {
+pkg/epp/framework/plugins/requestcontrol/selectivekv/plugin.go	Plugin.externalReusableTokens	range-map	1	for tier, blocks := range byTier {
+pkg/epp/framework/plugins/requesthandling/parsers/anthropic/anthropic.go	AnthropicParser.ParseResponse	range-map	1	for k, v := range headers {
+pkg/epp/framework/plugins/requesthandling/parsers/openai/openai.go	extractUsageHeaders	range-map	1	for header, target := range map[string]*int{
+pkg/epp/framework/plugins/requesthandling/parsers/openai/openai.go	headerValue	range-map	1	for key, value := range headers {
+pkg/epp/framework/plugins/requesthandling/parsers/sglanghttp/sglanghttp.go	isEventStream	range-map	1	for key, value := range headers {
+pkg/epp/framework/plugins/requesthandling/parsers/util/json.go	UnmarshalEnvelope	range-map	1	for key, raw := range fields {
+pkg/epp/framework/plugins/requesthandling/parsers/util/json.go	UnmarshalMapWithRawField	range-map	1	for key, raw := range fields {
+pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/plugin.go	Plugin.Filter	rand.Float64	1	if rand.Float64() < p.config.ExplorationProbability { //#nosec G404 -- exploration sampling, not security-sensitive
+pkg/epp/framework/plugins/scheduling/filter/sloheadroomtier/plugin.go	Plugin.Filter	rand.Float64	1	if rand.Float64() < p.config.EpsilonExploreNeg { //#nosec G404 -- exploration sampling, not security-sensitive
+pkg/epp/framework/plugins/scheduling/picker/common.go	RandFor	picker.PickerRand	1	return PickerRand
+pkg/epp/framework/plugins/scheduling/picker/common.go	ShuffleScoredEndpoints	picker.PickerRand	1	PickerRand.Shuffle(len(scoredEndpoints), func(i, j int) {
+pkg/epp/framework/plugins/scheduling/picker/common.go	newLockedRand	time.Now	1	seed := uint64(time.Now().UnixNano())
+pkg/epp/framework/plugins/scheduling/profilehandler/disagg/disagg_profile_handler.go	Handler.Consumes	range-map	1	for key, witness := range consumer.Consumes().Optional {
+pkg/epp/framework/plugins/scheduling/profilehandler/disagg/disagg_profile_handler.go	Handler.Consumes	range-map	1	for key, witness := range consumer.Consumes().Required {
+pkg/epp/framework/plugins/scheduling/profilehandler/disagg/disagg_profile_handler.go	Handler.Produces	range-map	1	for key, witness := range producer.Produces() {
+pkg/epp/framework/plugins/scheduling/profilehandler/headerprofile/header_profile_handler.go	HeaderProfileHandler.Pick	maps.Keys	1	registeredProfiles := slices.Sorted(maps.Keys(profiles))
+pkg/epp/framework/plugins/scheduling/profilehandler/headerprofile/header_profile_handler.go	HeaderProfileHandler.Pick	range-map	1	for name, profile := range profiles {
+pkg/epp/framework/plugins/scheduling/profilehandler/headerprofile/header_profile_handler.go	HeaderProfileHandler.ProcessResults	range-map	1	for name := range profileResults {
+pkg/epp/framework/plugins/scheduling/profilehandler/single/single_profile_handler.go	SingleProfileHandler.ProcessResults	range-map	1	for profileName := range profileResults {
+pkg/epp/framework/plugins/scheduling/scorer/activerequest/active_request.go	endpointScores.MarshalLog	range-map	1	for ep, score := range s {
+pkg/epp/framework/plugins/scheduling/scorer/attributeweight/attributeweight.go	NewEndpointAttributeWeightScorer	range-map	2	for value, weight := range params.Weights {
+pkg/epp/framework/plugins/scheduling/scorer/latencyobservation/plugin.go	Scorer.Score	rand.Float64	1	if rand.Float64() < s.explorationRate { //#nosec G404 -- exploration coin-flip for endpoint scoring, not security-sensitive
+pkg/epp/framework/plugins/scheduling/scorer/loraaffinity/lora_affinity.go	LoraAffinityScorer.Score	range-map	1	for k := range m.WaitingModels {
+pkg/epp/framework/plugins/scheduling/scorer/queuedepth/multicluster.go	MultiClusterScorer.Score	range-map	1	for ep, q := range queues {
+pkg/epp/framework/plugins/scheduling/scorer/queuedepth/queue.go	QueueScorer.Score	range-map	1	for endpoint, queueSize := range queues {
+pkg/epp/framework/plugins/scheduling/scorer/runningrequests/runningrequest.go	RunningRequestsSizeScorer.Score	range-map	1	for endpoint, size := range sizes {
+pkg/epp/framework/plugins/scheduling/util/sessionaffinity/session_id.go	SessionIDHeader.runEviction	sync.Map.Range	1	s.bindings.Range(func(key, value any) bool {
+pkg/epp/framework/plugins/scheduling/util/topology/level.go	ParseLevel	range-map	1	for level, name := range levelNames {
+pkg/epp/framework/plugins/thunderagent/accounting.go	ThunderAgent.PreRequest	time.Now	1	now := time.Now()
+pkg/epp/framework/plugins/thunderagent/accounting.go	ThunderAgent.ResponseBody	time.Now	1	now := time.Now()
+pkg/epp/framework/plugins/thunderagent/fairness.go	ThunderAgent.Pick	range-map	1	for _, p := range m.endpoints {
+pkg/epp/framework/plugins/thunderagent/fairness.go	ThunderAgent.Pick	time.Now	1	now := time.Now()
+pkg/epp/framework/plugins/thunderagent/fairness.go	ThunderAgent.newSessionPod	range-map	1	for p, room := range rooms {
+pkg/epp/framework/plugins/thunderagent/manager.go	endpointState.occupancy	range-map	1	for _, s := range p.sessions {
+pkg/epp/framework/plugins/thunderagent/manager.go	sessionManager.idleSessionsLocked	range-map	1	for id, s := range p.sessions {
+pkg/epp/framework/plugins/thunderagent/manager.go	sessionManager.reclaimableTokensLocked	range-map	1	for id, s := range p.sessions {
+pkg/epp/framework/plugins/thunderagent/manager.go	sessionManager.removeEndpoint	range-map	1	for _, s := range p.sessions {
+pkg/epp/framework/plugins/thunderagent/manager.go	sessionManager.snapshot	range-map	1	for _, s := range m.sessions {
+pkg/epp/framework/plugins/thunderagent/manager.go	sessionManager.snapshot	range-map	1	for id, p := range m.endpoints {
+pkg/epp/framework/plugins/thunderagent/manager.go	sessionManager.sweep	range-map	1	for id, p := range m.endpoints {
+pkg/epp/framework/plugins/thunderagent/manager.go	sessionManager.sweep	range-map	1	for id, s := range m.sessions {
+pkg/epp/framework/plugins/thunderagent/metrics.go	ledgerCollector.Collect	range-map	1	for endpoint, g := range snap.endpoints {
+pkg/epp/framework/plugins/thunderagent/metrics.go	ledgerCollector.Collect	time.Now	1	snap := c.mgr.snapshot(time.Now())
+pkg/epp/framework/plugins/thunderagent/plugin.go	Factory	go-statement	1	go a.runSweep(handle.Context(), sweepInterval)
+pkg/epp/framework/plugins/thunderagent/plugin.go	ThunderAgent.DumpState	range-map	1	for id, e := range snap.endpoints {
+pkg/epp/framework/plugins/thunderagent/plugin.go	ThunderAgent.DumpState	time.Now	1	snap := a.mgr.snapshot(time.Now())
+pkg/epp/framework/plugins/thunderagent/plugin.go	ThunderAgent.runSweep	time.NewTicker	1	ticker := time.NewTicker(interval)
+pkg/epp/framework/plugins/thunderagent/plugin.go	ThunderAgent.runSweep	time.Now	1	a.mgr.sweep(time.Now())
+pkg/epp/framework/plugins/thunderagent/saturation.go	ThunderAgent.Saturation	range-map	1	for id, p := range m.endpoints {
+pkg/epp/framework/plugins/thunderagent/saturation.go	ThunderAgent.Saturation	range-map	1	for sid, s := range p.sessions {
+pkg/epp/framework/plugins/thunderagent/saturation.go	ThunderAgent.Saturation	time.Now	1	now := time.Now()
+pkg/epp/handlers/request.go	StreamingServer.generateHeaders	range-map	1	for key, value := range reqCtx.Request.Headers {
+pkg/epp/handlers/request.go	StreamingServer.generateHeaders	range-map	1	for key, value := range traceHeaders {
+pkg/epp/handlers/request.go	StreamingServer.generateMetadata	range-map	1	for endpointAddress, score := range endpointScores {
+pkg/epp/handlers/request.go	unsetRoutingHeaders	range-map	1	for key := range request.InternalRoutingHeaders {
+pkg/epp/handlers/request.go	unsetRoutingHeaders	range-map	1	for key := range request.ScreeningHeaders {
+pkg/epp/handlers/response.go	StreamingServer.HandleResponseBody	time.Now	1	before := time.Now()
+pkg/epp/handlers/response.go	StreamingServer.HandleResponseBody	time.Since	1	metrics.RecordPluginProcessingLatency(fwkrh.ResponseParsingExtensionPoint, parser.TypedName().Type, parser.TypedName().Name, time.Since(before))
+pkg/epp/handlers/response.go	StreamingServer.generateResponseHeaders	range-map	1	for key, value := range reqCtx.Response.Headers {
+pkg/epp/requestcontrol/admission.go	FlowControlAdmissionController.Admit	time.Now	1	start := time.Now()
+pkg/epp/requestcontrol/admission.go	FlowControlAdmissionController.Admit	time.Since	1	reqCtx.FlowControlQueueDuration = time.Since(start)
+pkg/epp/requestcontrol/candidates.go	CachedEndpointCandidates.cleanup	range-map	1	for key, entry := range c.cache {
+pkg/epp/requestcontrol/director.go	Director.GetRandomEndpoint	rand.Intn	1	number := rand.Intn(len(pods)) //#nosec G404 -- load spreading across pods, not security-sensitive
+pkg/epp/requestcontrol/director.go	Director.loadOrCreateResponseBodyQueue	go-statement	1	go d.processResponseBodyQueue(q)
+pkg/epp/requestcontrol/director.go	Director.runAdmissionPlugins	time.Now	1	before := time.Now()
+pkg/epp/requestcontrol/director.go	Director.runAdmissionPlugins	time.Since	1	metrics.RecordPluginProcessingLatency(fwkrc.AdmissionExtensionPoint, name.Type, name.Name, time.Since(before))
+pkg/epp/requestcontrol/director.go	Director.runPreRequestPlugins	time.Now	1	before := time.Now()
+pkg/epp/requestcontrol/director.go	Director.runPreRequestPlugins	time.Since	1	metrics.RecordPluginProcessingLatency(fwkrc.PreRequestExtensionPoint, name.Type, name.Name, time.Since(before))
+pkg/epp/requestcontrol/director.go	Director.runRequestHeaderProcessors	time.Now	1	before := time.Now()
+pkg/epp/requestcontrol/director.go	Director.runRequestHeaderProcessors	time.Since	1	metrics.RecordPluginProcessingLatency(fwkrc.RequestHeaderExtensionPoint, name.Type, name.Name, time.Since(before))
+pkg/epp/requestcontrol/director.go	Director.runResponseBodyPlugins	time.Now	1	before := time.Now()
+pkg/epp/requestcontrol/director.go	Director.runResponseBodyPlugins	time.Since	1	metrics.RecordPluginProcessingLatency(fwkrc.ResponseStreamingExtensionPoint, name.Type, name.Name, time.Since(before))
+pkg/epp/requestcontrol/director.go	Director.runResponseHeaderPlugins	time.Now	1	before := time.Now()
+pkg/epp/requestcontrol/director.go	Director.runResponseHeaderPlugins	time.Since	1	metrics.RecordPluginProcessingLatency(fwkrc.ResponseReceivedExtensionPoint, name.Type, name.Name, time.Since(before))
+pkg/epp/requestcontrol/director.go	Director.runScreeners	time.Now	1	before := time.Now()
+pkg/epp/requestcontrol/director.go	Director.runScreeners	time.Since	1	name.Type, name.Name, time.Since(before))
+pkg/epp/requestcontrol/director_hosted.go	modelRewriteIntN	rand.Intn	1	return rand.Intn(n) //#nosec G404 -- model traffic split, not security-sensitive
+pkg/epp/requestcontrol/plugin_executor.go	runProducers	time.Now	1	before := time.Now()
+pkg/epp/requestcontrol/plugin_executor.go	runProducers	time.Since	1	metrics.RecordPluginProcessingLatency(fwkrc.DataProducerExtensionPoint, plugin.TypedName().Type, plugin.TypedName().Name, time.Since(before))
+pkg/epp/scheduling/scheduler.go	Scheduler.Schedule	maps.Keys	1	for _, name := range slices.Sorted(maps.Keys(profileRunErrors)) {
+pkg/epp/scheduling/scheduler.go	Scheduler.Schedule	maps.Keys	1	names := slices.Collect(maps.Keys(profiles))
+pkg/epp/scheduling/scheduler.go	Scheduler.Schedule	time.Now	2	before := time.Now()
+pkg/epp/scheduling/scheduler.go	Scheduler.Schedule	time.Now	1	scheduleStart := time.Now()
+pkg/epp/scheduling/scheduler.go	Scheduler.Schedule	time.Since	1	metrics.RecordPluginProcessingLatency(processProfilesResultsExtensionPoint, handlerName.Type, handlerName.Name, time.Since(before))
+pkg/epp/scheduling/scheduler.go	Scheduler.Schedule	time.Since	1	metrics.RecordPluginProcessingLatency(profilePickerExtensionPoint, handlerName.Type, handlerName.Name, time.Since(before))
+pkg/epp/scheduling/scheduler.go	Scheduler.Schedule	time.Since	1	metrics.RecordSchedulerE2ELatency(ctx, time.Since(scheduleStart))
+pkg/epp/scheduling/scheduler_profile.go	SchedulerProfile.runFilterPlugins	time.Now	1	before := time.Now()
+pkg/epp/scheduling/scheduler_profile.go	SchedulerProfile.runFilterPlugins	time.Since	1	metrics.RecordPluginProcessingLatency(filterExtensionPoint, typedName.Type, typedName.Name, time.Since(before))
+pkg/epp/scheduling/scheduler_profile.go	SchedulerProfile.runPickerPlugin	range-map	1	for endpoint, score := range weightedScorePerEndpoint {
+pkg/epp/scheduling/scheduler_profile.go	SchedulerProfile.runPickerPlugin	time.Now	1	before := time.Now()
+pkg/epp/scheduling/scheduler_profile.go	SchedulerProfile.runPickerPlugin	time.Since	1	metrics.RecordPluginProcessingLatency(pickerExtensionPoint, typedName.Type, typedName.Name, time.Since(before))
+pkg/epp/scheduling/scheduler_profile.go	SchedulerProfile.runScorerPlugins	range-map	1	for endpoint, score := range scores { // weight is relative to the sum of weights
+pkg/epp/scheduling/scheduler_profile.go	runScorer	range-map	1	for _, s := range scores {
+pkg/epp/scheduling/scheduler_profile.go	runScorer	time.Now	2	before := time.Now()
+pkg/epp/scheduling/scheduler_profile.go	runScorer	time.Since	2	metrics.RecordPluginProcessingLatency(scorerExtensionPoint, typedName.Type, typedName.Name, time.Since(before))
+pkg/epp/statesync/peerstore.go	MemoryPeerStore.Peers	range-map	1	for _, p := range s.peers {
+pkg/epp/util/pool/pool.go	InferencePoolToEndpointPool	range-map	1	for k, v := range inferencePool.Spec.Selector.MatchLabels {
+pkg/epp/util/testing/wrappers.go	InferencePoolWrapper.Selector	range-map	1	for k, v := range selector {
+pkg/epp/util/utils.go	TopologicalSort	range-map	1	for node, degree := range inDegree {
+pkg/epp/util/utils.go	TopologicalSort	range-map	1	for u, neighbors := range graph {
+pkg/kvcache/indexer.go	Indexer.ScoreTokens	range-map	1	for pod, m := range matches {
+pkg/kvcache/kvblock/cost_aware_memory.go	CostAwareMemoryIndex.Add	range-map	1	for ek, rks := range mappings {
+pkg/kvcache/kvblock/cost_aware_memory.go	CostAwareMemoryIndex.Lookup	sync.Map.Range	2	pods.cache.Range(func(k, value interface{}) bool {
+pkg/kvcache/kvblock/cost_aware_memory.go	CostAwareMemoryIndex.clearChunk	sync.Map.Range	1	podCache.cache.Range(func(k, _ any) bool {
+pkg/kvcache/kvblock/cost_aware_memory.go	CostAwareMemoryIndex.snapshotKeyIndex	range-map	1	for k := range m.keyIndex {
+pkg/kvcache/kvblock/cost_aware_memory.go	CostPodCache.CalculateByteSize	sync.Map.Range	1	c.cache.Range(func(key, value interface{}) bool {
+pkg/kvcache/kvblock/extra_keys.go	ComputeBlockExtraFeatures	range-map	1	for modality, hashes := range mmHashes {
+pkg/kvcache/kvblock/in_memory.go	InMemoryIndex.Add	range-map	1	for ek, rks := range mappings {
+pkg/kvcache/kvblock/in_memory.go	podsPerKeyPrintHelper	range-map	1	for k, v := range ks {
+pkg/kvcache/kvblock/redis.go	RedisIndex.Add	range-map	1	for ek, rks := range mappings {
+pkg/kvcache/kvblock/traced_index.go	tracedIndex.Lookup	range-map	1	for _, pods := range result {
+pkg/kvcache/metrics/collector.go	StartMetricsLogging	go-statement	1	go func() {
+pkg/kvcache/metrics/collector.go	StartMetricsLogging	time.NewTicker	1	ticker := time.NewTicker(interval)
+pkg/kvcache/prefix_match.go	maxMatchedBlocks	range-map	1	for _, m := range matches {
+pkg/kvevents/pool.go	Pool.Start	go-statement	1	go p.worker(ctx, i)
+pkg/kvevents/subscriber_manager.go	SubscriberManager.EnsureSubscriber	go-statement	1	go func() {
+pkg/kvevents/subscriber_manager.go	SubscriberManager.GetActiveSubscribers	range-map	1	for id, entry := range sm.subscribers {
+pkg/kvevents/subscriber_manager.go	SubscriberManager.Shutdown	range-map	1	for podIdentifier, entry := range sm.subscribers {
+pkg/kvevents/subscriber_manager.go	SubscriberManager.retireSubscriber	range-map	1	for _, other := range sm.subscribers {
+pkg/kvevents/subscriber_manager.go	cleanupSubscriberMetrics	go-statement	1	go func() {
+pkg/kvevents/zmq_subscriber.go	zmqSubscriber.Start	time.After	1	case <-time.After(retryInterval):
+pkg/kvevents/zmq_subscriber.go	zmqSubscriber.canAttemptReplay	time.Since	1	return z.lastReplayFailure.IsZero() || time.Since(z.lastReplayFailure) >= replayCooldown
+pkg/kvevents/zmq_subscriber.go	zmqSubscriber.fetchSnapshot	context.WithTimeout	1	ctx, cancel := context.WithTimeout(ctx, snapshotTimeout)
+pkg/kvevents/zmq_subscriber.go	zmqSubscriber.invalidateReplay	time.Now	1	z.lastReplayFailure = time.Now()
+pkg/kvevents/zmq_subscriber.go	zmqSubscriber.requestReplay	context.WithTimeout	1	replayCtx, cancel := context.WithTimeout(ctx, replayTimeout)
+pkg/kvevents/zmq_subscriber.go	zmqSubscriber.requestReplay	time.After	1	case <-time.After(replayRetryBackoff):
+pkg/kvevents/zmq_subscriber.go	zmqSubscriber.requestReplay	time.AfterFunc	1	idleTimer := time.AfterFunc(replayAttemptIdleTimeout, attemptCancel)
+pkg/kvevents/zmq_subscriber.go	zmqSubscriber.requestReplay	time.Now	1	waitStarted := time.Now()
+pkg/kvevents/zmq_subscriber.go	zmqSubscriber.requestReplay	time.Since	1	"waitDuration", time.Since(waitStarted),
+pkg/kvevents/zmq_subscriber.go	zmqSubscriber.requestReplay	time.Since	1	if waitDuration := time.Since(waitStarted); waitDuration >= time.Second {
+pkg/kvevents/zmq_subscriber.go	zmqSubscriber.requestSnapshot	time.Now	1	started := time.Now()
+pkg/kvevents/zmq_subscriber.go	zmqSubscriber.requestSnapshot	time.Now	1	z.lastReplayFailure = time.Now()
+pkg/kvevents/zmq_subscriber.go	zmqSubscriber.requestSnapshot	time.Since	1	"duration", time.Since(started), "snapshotEndpoint", z.snapshotEndpoint)

@@ -27,6 +27,7 @@ import (
 	"math/rand/v2"
 
 	errcommon "github.com/llm-d/llm-d-router/pkg/common/error"
+	"github.com/llm-d/llm-d-router/pkg/common/hosting"
 	fwkplugin "github.com/llm-d/llm-d-router/pkg/epp/framework/interface/plugin"
 	"github.com/llm-d/llm-d-router/pkg/epp/framework/interface/requestcontrol"
 	fwksched "github.com/llm-d/llm-d-router/pkg/epp/framework/interface/scheduling"
@@ -122,7 +123,7 @@ func (p *ProbabilisticAdmitter) TypedName() fwkplugin.TypedName {
 
 // Admit implements requestcontrol.Admitter.
 // Returns nil to admit, or a ResourceExhausted error to reject.
-func (p *ProbabilisticAdmitter) Admit(_ context.Context, request *fwksched.InferenceRequest, pods []fwksched.Endpoint) error {
+func (p *ProbabilisticAdmitter) Admit(ctx context.Context, request *fwksched.InferenceRequest, pods []fwksched.Endpoint) error {
 	if request == nil {
 		return nil
 	}
@@ -136,7 +137,11 @@ func (p *ProbabilisticAdmitter) Admit(_ context.Context, request *fwksched.Infer
 	saturation := p.computeSaturation(pods)
 	prob := math.Min(math.Pow(saturation, p.power)*p.k, 1.0)
 
-	if p.randFn() < prob {
+	randFn := p.randFn
+	if rt := hosting.From(ctx); rt.Hosted() {
+		randFn = rt.Rand("probabilistic-admitter").Float64
+	}
+	if randFn() < prob {
 		return errcommon.Error{
 			Code: errcommon.ResourceExhausted,
 			Msg:  fmt.Sprintf("probabilistic-admitter: rejected, saturation=%.3f prob=%.2f", saturation, prob),

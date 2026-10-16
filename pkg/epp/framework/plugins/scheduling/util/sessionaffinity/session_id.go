@@ -27,6 +27,7 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	"github.com/llm-d/llm-d-router/pkg/common/hosting"
 	"github.com/llm-d/llm-d-router/pkg/common/observability/logging"
 	"github.com/llm-d/llm-d-router/pkg/epp/framework/interface/datalayer"
 	"github.com/llm-d/llm-d-router/pkg/epp/framework/interface/plugin"
@@ -181,7 +182,7 @@ func NewSessionIDHeader(config SessionIDConfig, profileName string, pluginKey pl
 		sweepInterval: time.Duration(config.EvictionSweepSeconds * float64(time.Second)),
 		pluginState:   plugin.NewPluginState(handle.Context()),
 	}
-	go s.runEviction(handle.Context(), s.sweepInterval)
+	hosting.From(handle.Context()).Go(func() { s.runEviction(handle.Context(), s.sweepInterval) })
 	return s
 }
 
@@ -305,7 +306,7 @@ func (s *SessionIDHeader) PreRequest(ctx context.Context, request *scheduling.In
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	fresh := binding{podName: podName, lastSeen: time.Now()}
+	fresh := binding{podName: podName, lastSeen: hosting.Now(ctx)}
 	existingValue, loaded := s.bindings.LoadOrStore(sessionID, fresh)
 	if !loaded {
 		log.FromContext(ctx).V(logging.DEBUG).Info("Session affinity - bound session to pod",
@@ -371,15 +372,17 @@ func (s *SessionIDHeader) expired(lastSeen, now time.Time) bool {
 
 // runEviction drops bindings unused for longer than the TTL until ctx is cancelled.
 func (s *SessionIDHeader) runEviction(ctx context.Context, interval time.Duration) {
-	ticker := time.NewTicker(interval)
+	rt := hosting.From(ctx)
+	ticker := rt.Clock().NewTicker(interval)
 	defer ticker.Stop()
 
 	for {
+		rt.Park(func() bool { return ctx.Err() != nil || len(ticker.C()) > 0 })
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
-			now := time.Now()
+		case <-ticker.C():
+			now := rt.Now()
 			s.bindings.Range(func(key, value any) bool {
 				b, ok := value.(binding)
 				if !ok {

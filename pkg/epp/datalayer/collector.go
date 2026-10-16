@@ -23,8 +23,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-logr/logr"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	"github.com/llm-d/llm-d-router/pkg/common/hosting"
 	"github.com/llm-d/llm-d-router/pkg/common/observability/logging"
 	fwkdl "github.com/llm-d/llm-d-router/pkg/epp/framework/interface/datalayer"
 	"github.com/llm-d/llm-d-router/pkg/epp/metrics"
@@ -125,18 +127,24 @@ func (c *Collector) run(ctx context.Context, ticker Ticker, ep fwkdl.Endpoint, d
 		case <-ctx.Done():
 			return
 		case <-ticker.Channel():
-			for _, disp := range dispatchers {
-				if ctx.Err() != nil {
-					return
-				}
-				dispCtx, cancel := context.WithTimeout(ctx, defaultCollectionTimeout)
-				if err := disp.Dispatch(dispCtx, ep); err != nil {
-					tn := disp.TypedName()
-					metrics.RecordDataLayerPollError(tn.Type)
-					logger.V(logging.DEBUG).Info("dispatch failed", "source", tn, "err", err)
-				}
-				cancel()
-			}
+			collectOnce(ctx, logger, ep, dispatchers)
 		}
+	}
+}
+
+// collectOnce runs every dispatcher once for ep.
+func collectOnce(ctx context.Context, logger logr.Logger, ep fwkdl.Endpoint, dispatchers []fwkdl.PollingDispatcher) {
+	rt := hosting.From(ctx)
+	for _, disp := range dispatchers {
+		if ctx.Err() != nil {
+			return
+		}
+		dispCtx, cancel := rt.WithTimeout(ctx, defaultCollectionTimeout)
+		if err := disp.Dispatch(dispCtx, ep); err != nil {
+			tn := disp.TypedName()
+			metrics.RecordDataLayerPollError(tn.Type)
+			logger.V(logging.DEBUG).Info("dispatch failed", "source", tn, "err", err)
+		}
+		cancel()
 	}
 }

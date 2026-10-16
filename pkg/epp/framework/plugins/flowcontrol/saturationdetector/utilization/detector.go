@@ -31,6 +31,7 @@ import (
 	"github.com/go-logr/logr"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	"github.com/llm-d/llm-d-router/pkg/common/hosting"
 	logutil "github.com/llm-d/llm-d-router/pkg/common/observability/logging"
 	"github.com/llm-d/llm-d-router/pkg/epp/framework/interface/datalayer"
 	"github.com/llm-d/llm-d-router/pkg/epp/framework/interface/flowcontrol"
@@ -200,7 +201,7 @@ func (d *Detector) Saturation(ctx context.Context, candidates []datalayer.Endpoi
 	for _, e := range candidates {
 		podMetrics := e.GetMetrics()
 
-		if podMetrics == nil || time.Since(podMetrics.UpdateTime) > d.config.MetricsStalenessThreshold {
+		if podMetrics == nil || hosting.Since(ctx, podMetrics.UpdateTime) > d.config.MetricsStalenessThreshold {
 			if d.config.StalenessPolicy != StalenessIgnore {
 				// Saturated: an endpoint whose metrics are missing or stale scores as fully
 				// saturated. A fleet-wide metrics collection failure therefore halts dispatch
@@ -262,7 +263,7 @@ func (d *Detector) maybeLogStaleEndpoints(staleCount, total int) {
 // It applies a relaxed limit (Threshold * (1 + Headroom)) to allow for scheduling flexibility and burst tolerance.
 // The queue depth includes the same scrape-lag compensation as Saturation.
 func (d *Detector) Filter(
-	_ context.Context,
+	ctx context.Context,
 	_ *fwksched.InferenceRequest,
 	endpoints []fwksched.Endpoint,
 ) []fwksched.Endpoint {
@@ -274,7 +275,7 @@ func (d *Detector) Filter(
 
 	for _, endpoint := range endpoints {
 		podMetrics := endpoint.GetMetrics()
-		if podMetrics == nil || time.Since(podMetrics.UpdateTime) > d.config.MetricsStalenessThreshold {
+		if podMetrics == nil || hosting.Since(ctx, podMetrics.UpdateTime) > d.config.MetricsStalenessThreshold {
 			continue
 		}
 

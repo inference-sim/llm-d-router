@@ -25,6 +25,7 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	"github.com/llm-d/llm-d-router/pkg/common/hosting"
 	logutil "github.com/llm-d/llm-d-router/pkg/common/observability/logging"
 )
 
@@ -72,11 +73,12 @@ func NewPluginState(ctx context.Context, opts ...PluginStateOption) *PluginState
 	pluginState := &PluginState{
 		stalenessThreshold: defaultStalenessThreshold,
 		cleanupInterval:    defaultCleanupInterval,
+		rt:                 hosting.From(ctx),
 	}
 	for _, opt := range opts {
 		opt(pluginState)
 	}
-	go pluginState.cleanup(ctx)
+	pluginState.rt.Every(ctx, "plugin-state-cleanup", pluginState.cleanupInterval, func(context.Context) { pluginState.cleanStaleRequests() })
 	return pluginState
 }
 
@@ -103,6 +105,7 @@ type PluginState struct {
 
 	stalenessThreshold time.Duration
 	cleanupInterval    time.Duration
+	rt                 hosting.Runtime
 }
 
 // Read retrieves data with the given "key" in the context of "requestID" from PluginState.
@@ -112,7 +115,7 @@ func (s *PluginState) Read(requestID string, key StateKey) (StateData, error) {
 	if !ok {
 		return nil, ErrNotFound
 	}
-	s.requestToLastAccessTime.Store(requestID, time.Now())
+	s.requestToLastAccessTime.Store(requestID, s.rt.Now())
 
 	stateData := stateMap.(*sync.Map)
 	if value, ok := stateData.Load(key); ok {
@@ -125,7 +128,7 @@ func (s *PluginState) Read(requestID string, key StateKey) (StateData, error) {
 // Write stores the given "val" in PluginState with the given "key" in the context of the given "requestID".
 // Note: overwriting an existing key does NOT trigger OnEvicted on the displaced value.
 func (s *PluginState) Write(requestID string, key StateKey, val StateData) {
-	s.requestToLastAccessTime.Store(requestID, time.Now())
+	s.requestToLastAccessTime.Store(requestID, s.rt.Now())
 	// LoadOrStore applies only to the per-request map. It prevents concurrent
 	// first writes from creating competing maps and losing one writer's keys.
 	stateMap, _ := s.storage.LoadOrStore(requestID, &sync.Map{})
@@ -138,7 +141,7 @@ func (s *PluginState) Write(requestID string, key StateKey, val StateData) {
 // or stores and returns val when no data exists. The boolean reports whether
 // the returned data was already present.
 func (s *PluginState) ReadOrWrite(requestID string, key StateKey, val StateData) (actual StateData, existed bool) {
-	s.requestToLastAccessTime.Store(requestID, time.Now())
+	s.requestToLastAccessTime.Store(requestID, s.rt.Now())
 	// The outer operation chooses one per-request map. The inner operation then
 	// chooses one value for key, so concurrent callers all observe the same winner.
 	stateMap, _ := s.storage.LoadOrStore(requestID, &sync.Map{})
@@ -190,7 +193,7 @@ func (s *PluginState) DeleteKey(requestID string, key StateKey) {
 // Touch updates the last access time for the given requestID, extending its
 // lifetime before being reaped by the janitor.
 func (s *PluginState) Touch(requestID string) {
-	s.requestToLastAccessTime.Store(requestID, time.Now())
+	s.requestToLastAccessTime.Store(requestID, s.rt.Now())
 }
 
 // BindLiveness marks the request as alive for as long as ctx is not done. The
@@ -217,30 +220,15 @@ func (s *PluginState) LastAccessTime(requestID string) (time.Time, bool) {
 	return time.Time{}, false
 }
 
-// cleanup periodically deletes data associated with the given requestID.
-func (s *PluginState) cleanup(ctx context.Context) {
-	ticker := time.NewTicker(s.cleanupInterval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			log.FromContext(ctx).V(logutil.DEFAULT).Info("Shutting down plugin state cleanup")
-			return
-		case <-ticker.C:
-			s.cleanStaleRequests()
-		}
-	}
-}
-
 // cleanStaleRequests iterates through all requests and removes those that haven't been
 // accessed for longer than stalenessThreshold, except requests whose bound liveness ctx
 // is still alive (see BindLiveness). This operation is safe to run concurrently
 // with other operations on the PluginState.
 func (s *PluginState) cleanStaleRequests() {
-	s.requestToLastAccessTime.Range(func(k, v any) bool {
+	s.rangeLastAccess(func(k, v any) bool {
 		requestID := k.(string)
 		lastAccessTime := v.(time.Time)
-		if time.Since(lastAccessTime) > s.stalenessThreshold {
+		if s.rt.Now().Sub(lastAccessTime) > s.stalenessThreshold {
 			if bound, ok := s.requestLiveness.Load(requestID); ok && bound.(context.Context).Err() == nil {
 				log.Log.V(logutil.TRACE).Info("Holding stale request with a live bound context", "requestID", requestID, "lastAccessTime", lastAccessTime)
 				s.Touch(requestID)

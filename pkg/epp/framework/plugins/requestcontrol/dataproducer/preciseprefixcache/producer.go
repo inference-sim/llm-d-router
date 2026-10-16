@@ -24,7 +24,6 @@ import (
 	"sort"
 	"time"
 
-	"github.com/jellydator/ttlcache/v3"
 	reqcommon "github.com/llm-d/llm-d-router/pkg/common/request"
 	"github.com/llm-d/llm-d-router/pkg/kvcache"
 	"github.com/llm-d/llm-d-router/pkg/kvcache/kvblock"
@@ -35,6 +34,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	"github.com/llm-d/llm-d-router/pkg/common/hosting"
 	"github.com/llm-d/llm-d-router/pkg/common/observability/logging"
 	"github.com/llm-d/llm-d-router/pkg/common/observability/semconv"
 	"github.com/llm-d/llm-d-router/pkg/common/observability/tracing"
@@ -103,7 +103,7 @@ type Producer struct {
 
 	pluginState *plugin.PluginState
 
-	speculativeCache   *ttlcache.Cache[string, *speculativeEntries]
+	speculativeCache   speculativeStore
 	speculativeTTL     time.Duration
 	speculativeEnabled bool
 
@@ -182,6 +182,9 @@ func ValidateTokenProducer(handle plugin.Handle) error {
 // The kvcache indexer, KV-events pool, and any local ZMQ subscriber start
 // in background goroutines bound to ctx.
 func New(ctx context.Context, name string, config PluginConfig) (*Producer, error) {
+	if hosting.From(ctx).Hosted() {
+		return newHostedProducer(ctx, name, config)
+	}
 	if config.TokenProcessorConfig == nil {
 		config.TokenProcessorConfig = kvblock.DefaultTokenProcessorConfig()
 	}
@@ -342,6 +345,7 @@ func (p *Producer) Consumes() plugin.DataDependencies {
 func (p *Producer) Produce(ctx context.Context,
 	request *scheduling.InferenceRequest, endpoints []scheduling.Endpoint,
 ) error {
+	p.expireSpeculative()
 	ctx, span := tracing.Tracer(rcplugins.TracerScope).Start(ctx, "produce_precise_prefix_cache",
 		trace.WithSpanKind(trace.SpanKindInternal),
 	)

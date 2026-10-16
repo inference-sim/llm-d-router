@@ -21,10 +21,10 @@ import (
 	"context"
 	"net"
 	"sync"
-	"time"
 
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	"github.com/llm-d/llm-d-router/pkg/common/hosting"
 	logutil "github.com/llm-d/llm-d-router/pkg/common/observability/logging"
 	"github.com/llm-d/llm-d-router/pkg/epp/framework/interface/datalayer"
 	"github.com/llm-d/llm-d-router/pkg/epp/framework/interface/flowcontrol"
@@ -121,7 +121,7 @@ func (p *RequestEvictor) PreRequest(
 	item := &flowcontrol.EvictionItem{
 		RequestID:      requestID,
 		Priority:       request.Objectives.Priority,
-		DispatchTime:   time.Now(),
+		DispatchTime:   hosting.Now(ctx),
 		TargetURL:      "http://" + net.JoinHostPort(metadata.GetIPAddress(), metadata.GetPort()),
 		Request:        request,
 		TargetEndpoint: metadata,
@@ -134,10 +134,12 @@ func (p *RequestEvictor) PreRequest(
 	// Bind untrack to the request context's lifetime as a safety net.
 	// If the client disconnects and ResponseBody(EndOfStream) never fires,
 	// ctx.Done() ensures the request is still cleaned up. Untrack is idempotent.
-	go func() {
+	rt := hosting.From(ctx)
+	rt.Go(func() {
+		rt.Park(func() bool { return ctx.Err() != nil })
 		<-ctx.Done()
 		p.cleanupRequest(requestID)
-	}()
+	})
 
 	log.FromContext(ctx).V(logutil.DEBUG).Info("Tracked in-flight request",
 		"requestID", requestID,

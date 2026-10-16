@@ -26,6 +26,7 @@ import (
 	"github.com/hashicorp/golang-lru/v2/simplelru"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	"github.com/llm-d/llm-d-router/pkg/common/hosting"
 	logutil "github.com/llm-d/llm-d-router/pkg/common/observability/logging"
 )
 
@@ -53,7 +54,7 @@ func newIndexer(ctx context.Context, defaultLRUSize int, pluginName, pluginType 
 		pluginType:     pluginType,
 	}
 
-	go i.reportLRUSize(ctx, time.Second)
+	hosting.From(ctx).Go(func() { i.reportLRUSize(ctx, time.Second) })
 	return i
 }
 
@@ -156,13 +157,15 @@ func runLength(l *simplelru.LRU[blockHash, struct{}], hashes []blockHash) int {
 
 // reportLRUSize starts a goroutine that periodically reports the LRU cache size metric.
 func (i *indexer) reportLRUSize(ctx context.Context, interval time.Duration) {
-	ticker := time.NewTicker(interval)
+	rt := hosting.From(ctx)
+	ticker := rt.Clock().NewTicker(interval)
 	defer ticker.Stop()
 	for {
+		rt.Park(func() bool { return ctx.Err() != nil || len(ticker.C()) > 0 })
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
+		case <-ticker.C():
 			i.reportOnce(ctx)
 		}
 	}

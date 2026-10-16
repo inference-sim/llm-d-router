@@ -28,6 +28,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/llm-d/llm-d-router/pkg/common/envoy"
+	"github.com/llm-d/llm-d-router/pkg/common/hosting"
 	logutil "github.com/llm-d/llm-d-router/pkg/common/observability/logging"
 	fwkrh "github.com/llm-d/llm-d-router/pkg/epp/framework/interface/requesthandling"
 	"github.com/llm-d/llm-d-router/pkg/epp/metadata"
@@ -60,11 +61,14 @@ func (s *StreamingServer) HandleResponseBody(ctx context.Context, reqCtx *Reques
 	reqCtx.responseSize += len(responseBytes)
 
 	if reqCtx.firstTokenTimestamp.IsZero() && len(responseBytes) > 0 {
-		reqCtx.firstTokenTimestamp = time.Now()
+		reqCtx.firstTokenTimestamp = hosting.Now(ctx)
+	}
+	if endOfStream && reqCtx.responseCompleteTimestamp.IsZero() { // an embedder drives this, not the stream loop
+		reqCtx.responseCompleteTimestamp = hosting.Now(ctx)
 	}
 
 	if reqCtx.modelServerStreaming && len(responseBytes) > 0 {
-		now := time.Now()
+		now := hosting.Now(ctx)
 		if !reqCtx.lastChunkReceivedTimestamp.IsZero() {
 			itl := now.Sub(reqCtx.lastChunkReceivedTimestamp).Seconds()
 			metrics.RecordInterTokenLatency(ctx, reqCtx.IncomingModelName, reqCtx.TargetModelName, fairnessID, priority, itl)

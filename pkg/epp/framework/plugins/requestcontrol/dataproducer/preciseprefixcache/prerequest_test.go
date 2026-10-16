@@ -108,7 +108,7 @@ func TestPreRequest_SeedsSpeculativeForPrimary(t *testing.T) {
 	assert.Equal(t, "10.0.0.1:8080", calls[0].entries[0].PodIdentifier)
 	assert.True(t, calls[0].entries[0].Speculative)
 
-	cached := p.speculativeCache.Get(req.RequestID)
+	cached := specGet(p, req.RequestID)
 	require.NotNil(t, cached)
 	assert.Equal(t, [][]kvblock.BlockHash{blockKeys}, cached.Value().perPromptKeys)
 	require.Len(t, cached.Value().podEntries, 1)
@@ -133,7 +133,7 @@ func TestPreRequest_EmptyBlockKeys_NoAdd(t *testing.T) {
 
 	_ = p.PreRequest(ctx, req, primaryOnly("default", testEndpoints[0]))
 
-	assert.Nil(t, p.speculativeCache.Get(req.RequestID))
+	assert.Nil(t, specGet(p, req.RequestID))
 }
 
 // P/D prefill profile: index.Add called twice (primary + prefill), and the
@@ -167,7 +167,7 @@ func TestPreRequest_PrefillProfile_SeedsBoth(t *testing.T) {
 	assert.Equal(t, "10.0.0.1:8080", calls[0].entries[0].PodIdentifier)
 	assert.Equal(t, "10.0.0.2:8080", calls[1].entries[0].PodIdentifier)
 
-	cached := p.speculativeCache.Get(req.RequestID)
+	cached := specGet(p, req.RequestID)
 	require.NotNil(t, cached)
 	require.Len(t, cached.Value().podEntries, 2)
 	assert.Equal(t, "10.0.0.1:8080", cached.Value().podEntries[0].PodIdentifier)
@@ -193,7 +193,7 @@ func TestPreRequest_SpeculativeDisabled_NoOp(t *testing.T) {
 
 	_ = p.PreRequest(ctx, req, primaryOnly("default", testEndpoints[0]))
 
-	assert.Nil(t, p.speculativeCache.Get(req.RequestID))
+	assert.Nil(t, specGet(p, req.RequestID))
 }
 
 // The predicted token count comes from the chosen endpoint's unweighted cached

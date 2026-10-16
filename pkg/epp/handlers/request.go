@@ -23,7 +23,6 @@ import (
 	"net"
 	"strconv"
 	"strings"
-	"time"
 
 	configPb "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	extProcPb "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
@@ -33,12 +32,13 @@ import (
 
 	"github.com/llm-d/llm-d-router/pkg/common/envoy"
 	errcommon "github.com/llm-d/llm-d-router/pkg/common/error"
+	"github.com/llm-d/llm-d-router/pkg/common/hosting"
 	"github.com/llm-d/llm-d-router/pkg/epp/metadata"
 	"github.com/llm-d/llm-d-router/pkg/epp/util/request"
 )
 
 func (s *StreamingServer) HandleRequestHeaders(ctx context.Context, reqCtx *RequestContext, req *extProcPb.ProcessingRequest_RequestHeaders) error {
-	reqCtx.RequestReceivedTimestamp = time.Now()
+	reqCtx.RequestReceivedTimestamp = hosting.Now(ctx)
 
 	// Responders run before the EndOfStream fallback so they can intercept bodyless
 	// GETs (e.g. /v1/models) that would otherwise be routed to a random endpoint.
@@ -70,6 +70,9 @@ func (s *StreamingServer) HandleRequestHeaders(ctx context.Context, reqCtx *Requ
 }
 
 func (s *StreamingServer) fallbackToRandomEndpoint(ctx context.Context, reqCtx *RequestContext, requestSize int) error {
+	if hosting.From(ctx).Hosted() { // the random pick draws from the process-wide source
+		return errcommon.Error{Code: errcommon.Internal, Msg: "a hosted router does not route bodyless requests"}
+	}
 	endpoint := s.director.GetRandomEndpoint()
 	if endpoint == nil {
 		return errcommon.Error{Code: errcommon.Internal, Msg: "no pods available in datastore"}

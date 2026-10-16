@@ -310,6 +310,10 @@ func (a *priorityBandAccessor) Queue(id string) flowcontrol.FlowQueueAccessor {
 // concurrently with iteration may still be visited, so callbacks must tolerate Len() == 0; a
 // queue is guaranteed to be visible once the Add that made it non-empty has returned.
 func (a *priorityBandAccessor) IterateQueues(callback func(queue flowcontrol.FlowQueueAccessor) bool) {
+	if a.registry.hosted {
+		a.iterateQueuesInOrder(callback)
+		return
+	}
 	a.band.activeQueues.Range(func(_, v any) bool {
 		return callback(v.(*managedQueue).FlowQueueAccessor())
 	})

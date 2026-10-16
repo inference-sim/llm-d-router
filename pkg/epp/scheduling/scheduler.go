@@ -29,6 +29,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	"github.com/llm-d/llm-d-router/pkg/common/hosting"
 	logutil "github.com/llm-d/llm-d-router/pkg/common/observability/logging"
 	"github.com/llm-d/llm-d-router/pkg/common/observability/semconv"
 	"github.com/llm-d/llm-d-router/pkg/common/observability/tracing"
@@ -97,7 +98,13 @@ func (s *Scheduler) Schedule(ctx context.Context, request *fwksched.InferenceReq
 			break
 		}
 
-		for name, profile := range profiles {
+		names := slices.Collect(maps.Keys(profiles))
+		if hosting.From(ctx).Hosted() {
+			// A hosted runtime runs profiles in name order so plugin side effects are reproducible.
+			slices.Sort(names)
+		}
+		for _, name := range names {
+			profile := profiles[name]
 			if verboseEnabled {
 				loggerVerbose.Info("Running scheduler profile", "profile", name)
 			}

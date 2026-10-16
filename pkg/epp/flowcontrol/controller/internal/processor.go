@@ -30,6 +30,7 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/utils/clock"
 
+	"github.com/llm-d/llm-d-router/pkg/common/hosting"
 	logutil "github.com/llm-d/llm-d-router/pkg/common/observability/logging"
 	"github.com/llm-d/llm-d-router/pkg/epp/flowcontrol/contracts"
 	"github.com/llm-d/llm-d-router/pkg/epp/flowcontrol/types"
@@ -70,6 +71,7 @@ var ErrProcessorBusy = errors.New("processor is busy")
 // inherently atomic without coarse-grained locks.
 type Processor struct {
 	poolName             string
+	hosted               bool
 	registry             contracts.FlowRegistry
 	registryBackground   contracts.FlowRegistryBackground
 	saturationDetector   flowcontrol.SaturationDetector
@@ -158,6 +160,7 @@ func NewProcessor(
 		cleanupSweepInterval: cleanupSweepInterval,
 		logger:               logger,
 		lifecycleCtx:         ctx,
+		hosted:               hosting.From(ctx).Hosted(),
 		enqueueChan:          make(chan *FlowItem, enqueueChannelBufferSize),
 		reclamation:          reclamation,
 	}
@@ -229,8 +232,9 @@ func (p *Processor) Run(ctx context.Context) {
 	p.logger.V(logutil.DEFAULT).Info("Processor run loop starting.")
 	defer p.logger.V(logutil.DEFAULT).Info("Processor run loop stopped.")
 
+	rt := hosting.From(ctx)
 	p.wg.Add(1)
-	go p.runCleanupSweep(ctx)
+	rt.Go(func() { p.runCleanupSweep(ctx) })
 
 	// Create a ticker for periodic dispatch attempts to avoid tight loops
 	dispatchTicker := p.clock.NewTicker(time.Millisecond)
@@ -257,6 +261,10 @@ func (p *Processor) Run(ctx context.Context) {
 	//  4. Priority Band Updates: Applies control-plane priority band topology changes.
 	//  5. Registry GC: Periodically garbage-collects idle flows and priority bands.
 	for {
+		rt.Park(func() bool {
+			return ctx.Err() != nil || len(p.enqueueChan) > 0 || len(dispatchTicker.C()) > 0 ||
+				len(priorityBandUpdateCh) > 0 || len(gcCh) > 0
+		})
 		select {
 		case <-ctx.Done():
 			p.shutdown()
@@ -712,7 +720,9 @@ func (p *Processor) runCleanupSweep(ctx context.Context) {
 	ticker := p.clock.NewTicker(p.cleanupSweepInterval)
 	defer ticker.Stop()
 
+	rt := hosting.From(ctx)
 	for {
+		rt.Park(func() bool { return ctx.Err() != nil || len(ticker.C()) > 0 })
 		select {
 		case <-ctx.Done():
 			return
@@ -930,6 +940,14 @@ func (p *Processor) processAllQueuesConcurrently(
 	}
 
 	if len(resolvedQueues) == 0 {
+		return
+	}
+
+	if p.hosted {
+		// A hosted runtime orders the work itself: process the queues in iteration order.
+		for _, task := range resolvedQueues {
+			processFn(task.mq, task.logger)
+		}
 		return
 	}
 

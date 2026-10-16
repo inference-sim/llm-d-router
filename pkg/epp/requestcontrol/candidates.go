@@ -29,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	"github.com/llm-d/llm-d-router/pkg/common/hosting"
 	logutil "github.com/llm-d/llm-d-router/pkg/common/observability/logging"
 	"github.com/llm-d/llm-d-router/pkg/epp/datastore"
 	"github.com/llm-d/llm-d-router/pkg/epp/flowcontrol/contracts"
@@ -198,6 +199,8 @@ type CachedEndpointCandidates struct {
 	// ttl defines how long a cache entry remains valid.
 	ttl time.Duration
 
+	rt hosting.Runtime
+
 	// mu protects the cache map.
 	mu    sync.RWMutex
 	cache map[string]cacheEntry
@@ -216,10 +219,11 @@ func NewCachedEndpointCandidates(ctx context.Context, delegate contracts.Endpoin
 		delegate: delegate,
 		ttl:      ttl,
 		cache:    make(map[string]cacheEntry),
+		rt:       hosting.From(ctx),
 	}
 
 	// Start background cleanup to prevent memory leaks from unused keys.
-	go c.runCleanup(ctx)
+	c.rt.Every(ctx, "endpoint-candidates-cleanup", cleanupInterval, func(context.Context) { c.cleanup() })
 
 	return c
 }
@@ -234,7 +238,7 @@ func (c *CachedEndpointCandidates) Locate(ctx context.Context, requestMetadata m
 	entry, found := c.cache[key]
 	c.mu.RUnlock()
 
-	if found && time.Now().Before(entry.expiry) {
+	if found && c.rt.Now().Before(entry.expiry) {
 		return entry.pods
 	}
 
@@ -245,7 +249,7 @@ func (c *CachedEndpointCandidates) Locate(ctx context.Context, requestMetadata m
 
 	// Double-check: Someone else might have updated the cache while we were waiting for the lock.
 	entry, found = c.cache[key]
-	if found && time.Now().Before(entry.expiry) {
+	if found && c.rt.Now().Before(entry.expiry) {
 		return entry.pods
 	}
 
@@ -258,7 +262,7 @@ func (c *CachedEndpointCandidates) Locate(ctx context.Context, requestMetadata m
 	// Update cache.
 	c.cache[key] = cacheEntry{
 		pods:   freshPods,
-		expiry: time.Now().Add(c.ttl),
+		expiry: c.rt.Now().Add(c.ttl),
 	}
 
 	return freshPods
@@ -311,29 +315,12 @@ func (c *CachedEndpointCandidates) generateCacheKey(reqMetadata map[string]any) 
 	return strings.Join(endpoints, "|")
 }
 
-// runCleanup periodically removes expired entries from the cache to prevent unbounded growth.
-func (c *CachedEndpointCandidates) runCleanup(ctx context.Context) {
-	logger := log.FromContext(ctx).WithName("CachedEndpointCandidatesCleanup")
-	ticker := time.NewTicker(cleanupInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			logger.V(logutil.DEBUG).Info("Stopping cleanup routine")
-			return
-		case <-ticker.C:
-			c.cleanup()
-		}
-	}
-}
-
 // cleanup iterates over the map and removes expired entries.
 func (c *CachedEndpointCandidates) cleanup() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	now := time.Now()
+	now := c.rt.Now()
 	for key, entry := range c.cache {
 		if now.After(entry.expiry) {
 			delete(c.cache, key)

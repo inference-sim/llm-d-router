@@ -38,6 +38,7 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	"github.com/llm-d/llm-d-router/pkg/common/hosting"
 	"github.com/llm-d/llm-d-router/pkg/common/observability/logging"
 	fwkdl "github.com/llm-d/llm-d-router/pkg/epp/framework/interface/datalayer"
 	fwkplugin "github.com/llm-d/llm-d-router/pkg/epp/framework/interface/plugin"
@@ -280,7 +281,8 @@ func (s *HTTPDataSource[T]) Poll(ctx context.Context, ep fwkdl.Endpoint) (T, err
 // in LlmdDataLayerExtractErrorsTotal and do NOT surface as a returned error.
 // This keeps the collector's poll/extract counters cleanly separated.
 func (s *HTTPDataSource[T]) Dispatch(ctx context.Context, ep fwkdl.Endpoint) error {
-	pollCtx, cancelPoll := context.WithTimeout(ctx, defaultStepTimeout)
+	rt := hosting.From(ctx)
+	pollCtx, cancelPoll := rt.WithTimeout(ctx, defaultStepTimeout)
 	data, err := s.Poll(pollCtx, ep)
 	cancelPoll()
 	if err != nil {
@@ -294,7 +296,7 @@ func (s *HTTPDataSource[T]) Dispatch(ctx context.Context, ep fwkdl.Endpoint) err
 		if ctx.Err() != nil {
 			return nil
 		}
-		extCtx, cancelExt := context.WithTimeout(ctx, defaultStepTimeout)
+		extCtx, cancelExt := rt.WithTimeout(ctx, defaultStepTimeout)
 		s.runExtractor(extCtx, ext, in)
 		cancelExt()
 	}

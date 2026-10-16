@@ -17,7 +17,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Add labels when base branch is not main
-        if: github.event.pull_request.base.ref != 'main'
+        # llm-d-r is the inference-sim fork's long-lived hosting branch; PRs into it are its normal flow.
+        if: github.event.pull_request.base.ref != 'main' && github.event.pull_request.base.ref != 'llm-d-r'
         uses: actions-ecosystem/action-add-labels@v1
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}

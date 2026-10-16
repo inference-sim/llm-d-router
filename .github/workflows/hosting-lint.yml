@@ -1,0 +1,43 @@
+# The inference-sim fork of llm-d-router runs the router on an injectable hosting runtime
+# (pkg/common/hosting) so BLIS can embed it in a discrete-event simulation. This workflow keeps
+# that property across rebases onto new llm-d releases.
+name: hosting-lint
+
+on:
+  push:
+    branches: [llm-d-r]
+  pull_request:
+    branches: [llm-d-r]
+
+jobs:
+  hosting:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Fetch upstream
+        run: git remote add upstream https://github.com/llm-d/llm-d-router.git && git fetch --no-tags upstream
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      # Type-checks the router packages (golang.org/x/tools/go/packages) and compares each direct
+      # use against hack/hosting-lint/baseline.txt, keyed per use (file, function, kind, line text).
+      - name: No new direct clock, timer, goroutine, randomness, map-order or HTTP use on router paths
+        run: go run ./hack/hosting-lint
+      # Needs the full history (fetch-depth: 0 above) and the upstream fetch so upstream_base resolves.
+      - name: Patch budget (lines changed, renamed or deleted in upstream files)
+        run: go run ./hack/hosting-lint -budget
+      # Every Go file the fork changes is gofmt-clean, and every file it adds is goimports-clean.
+      # Upstream files are not regrouped: that would only make each rebase conflict.
+      - name: Formatting of the fork's files
+        run: |
+          base=$(sed -n 's/^upstream_base *= *//p' hack/hosting-lint/budget.txt)
+          changed=$(git diff --name-only --diff-filter=AMR "$base"...HEAD -- '*.go')
+          added=$(git diff --name-only --diff-filter=A "$base"...HEAD -- '*.go')
+          unformatted=""
+          if [ -n "$changed" ]; then unformatted=$(gofmt -l $changed); fi
+          if [ -n "$added" ]; then unformatted="$unformatted$(go run golang.org/x/tools/cmd/goimports@v0.50.0 -local github.com/llm-d/llm-d-router -l $added)"; fi
+          if [ -n "$unformatted" ]; then echo "not formatted:"; echo "$unformatted"; exit 1; fi
+      - name: Seam and converted packages
+        run: go test ./pkg/common/hosting/... ./pkg/epp/requestcontrol/... ./pkg/epp/scheduling/... ./pkg/epp/datastore/... ./pkg/epp/datalayer/... ./pkg/epp/flowcontrol/... ./pkg/epp/framework/... ./pkg/epp/handlers/... ./cmd/epp/...

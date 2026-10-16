@@ -1,0 +1,4 @@
+# The patch budget: lines the fork may change in files it shares with upstream.
+# New files are free; the fork rebases onto upstream_base on each release.
+upstream_base = d446dd3cb6ce0ce96e00b3b9b66fa681e29ffb7a
+max_changed_upstream_lines = 450

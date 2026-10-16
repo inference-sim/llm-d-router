@@ -25,6 +25,7 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	"github.com/llm-d/llm-d-router/pkg/common/hosting"
 	"github.com/llm-d/llm-d-router/pkg/epp/datalayer"
 	fwkrc "github.com/llm-d/llm-d-router/pkg/epp/framework/interface/requestcontrol"
 	fwksched "github.com/llm-d/llm-d-router/pkg/epp/framework/interface/scheduling"
@@ -97,15 +98,17 @@ func dataProducerPluginsWithTimeout(ctx context.Context, timeout time.Duration, 
 	// sync.Map before launching it so any cancellation-aware producer finishing
 	// a write cannot race with scheduling over lazy store initialization.
 	request.InitializeAttributeStore()
-	ctx, cancel := context.WithTimeout(ctx, timeout)
+	rt := hosting.From(ctx)
+	ctx, cancel := rt.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	invocations := scopeProducers(ctx, plugins, request, endpoints)
 	errCh := make(chan error, 1)
-	go func() {
+	rt.Go(func() {
 		errCh <- runProducers(ctx, invocations)
-	}()
+	})
 
+	rt.Park(func() bool { return len(errCh) > 0 || ctx.Err() != nil })
 	select {
 	case err := <-errCh:
 		return err
