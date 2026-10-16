@@ -245,6 +245,15 @@ func (p *Producer) HostedPodBlocks(podIdentifier string) (map[uint64]bool, error
 	return kvblock.PodEngineKeys(p.kvCacheIndexer.KVBlockIndex(), podIdentifier)
 }
 
+// HostedPodTierBlocks is HostedPodBlocks restricted to one device tier ("gpu", "cpu", ...).
+func (p *Producer) HostedPodTierBlocks(podIdentifier, deviceTier string) (map[uint64]bool, error) {
+	if p.hostedPool() == nil {
+		return nil, errNotHosted
+	}
+	p.expireSpeculative()
+	return kvblock.PodTierEngineKeys(p.kvCacheIndexer.KVBlockIndex(), podIdentifier, deviceTier)
+}
+
 // expireSpeculative evicts the hosted speculative entries whose TTL has passed. A process producer
 // expires them from the TTL cache's own goroutine instead, so this is a no-op there.
 func (p *Producer) expireSpeculative() {

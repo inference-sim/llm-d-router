@@ -25,6 +25,11 @@ import "fmt"
 // does not change what the index later evicts. Only the in-memory index, optionally wrapped in the
 // traced and instrumented decorators, can be enumerated; any other index returns an error.
 func PodEngineKeys(idx Index, podIdentifier string) (map[uint64]bool, error) {
+	return PodTierEngineKeys(idx, podIdentifier, "")
+}
+
+// PodTierEngineKeys is PodEngineKeys restricted to entries on deviceTier ("" for any tier).
+func PodTierEngineKeys(idx Index, podIdentifier, deviceTier string) (map[uint64]bool, error) {
 	m, ok := unwrapInMemory(idx)
 	if !ok {
 		return nil, fmt.Errorf("kvblock: index %T cannot enumerate engine keys", idx)
@@ -35,7 +40,7 @@ func PodEngineKeys(idx Index, podIdentifier string) (map[uint64]bool, error) {
 		if !found || len(requestKeys) == 0 {
 			continue
 		}
-		if m.podHoldsAll(requestKeys, podIdentifier) {
+		if m.podHoldsAll(requestKeys, podIdentifier, deviceTier) {
 			out[uint64(engineKey)] = true
 		}
 	}
@@ -43,7 +48,7 @@ func PodEngineKeys(idx Index, podIdentifier string) (map[uint64]bool, error) {
 }
 
 // podHoldsAll reports whether every request key carries a confirmed entry for podIdentifier.
-func (m *InMemoryIndex) podHoldsAll(requestKeys []BlockHash, podIdentifier string) bool {
+func (m *InMemoryIndex) podHoldsAll(requestKeys []BlockHash, podIdentifier, deviceTier string) bool {
 	for _, requestKey := range requestKeys {
 		podCache, found := m.data.Peek(requestKey)
 		if !found || podCache == nil {
@@ -51,7 +56,7 @@ func (m *InMemoryIndex) podHoldsAll(requestKeys []BlockHash, podIdentifier strin
 		}
 		confirmed := false
 		for _, entry := range podCache.matching(podIdentifier) {
-			if !entry.Speculative {
+			if !entry.Speculative && (deviceTier == "" || entry.DeviceTier == deviceTier) {
 				confirmed = true
 				break
 			}
