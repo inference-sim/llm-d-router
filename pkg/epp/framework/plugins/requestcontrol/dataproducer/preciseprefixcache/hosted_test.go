@@ -32,6 +32,7 @@ import (
 
 	"github.com/llm-d/llm-d-router/pkg/common/hosting"
 	fwkdl "github.com/llm-d/llm-d-router/pkg/epp/framework/interface/datalayer"
+	"github.com/llm-d/llm-d-router/pkg/epp/framework/interface/plugin"
 	fwkrh "github.com/llm-d/llm-d-router/pkg/epp/framework/interface/requesthandling"
 	"github.com/llm-d/llm-d-router/pkg/epp/framework/interface/scheduling"
 	attrprefix "github.com/llm-d/llm-d-router/pkg/epp/framework/plugins/datalayer/attribute/prefix"
@@ -350,4 +351,34 @@ func TestSpeculativeDisabled_NilStore(t *testing.T) {
 		_, err := p.DumpState()
 		require.NoError(t, err)
 	}
+}
+
+// Hosted Produce records each candidate's prediction (by endpoint ID) and their maximum in the
+// plugin state PreRequest reads, exactly as in a process (#3281), and speculative indexing does not
+// disturb it.
+func TestHostedProduce_RecordsPerCandidatePredictions(t *testing.T) {
+	p, _, ctx := newHostedTestProducer(t, true)
+	tokens := promptTokens(3)
+	require.NoError(t, p.HostedIngest(ctx, podA, hostedModel, storedBatch(tokens, 101, 102, 103)))
+
+	endpoints := freshEndpoints()
+	req := hostedRequest("r-state", tokens)
+	require.NoError(t, p.Produce(ctx, req, endpoints))
+
+	state, err := plugin.ReadPluginStateKey[*bestAvailableState](p.pluginState, req.RequestID, bestAvailableStateKey)
+	require.NoError(t, err)
+	want := map[fwkdl.ID]int{}
+	for _, ep := range endpoints {
+		md := ep.GetMetadata()
+		want[md.ID] = 0
+		if md.Address+":"+md.Port == podA {
+			want[md.ID] = 3 * testBlockSize
+		}
+	}
+	assert.Equal(t, want, state.predictedCachedTokens)
+	assert.Equal(t, 3*testBlockSize, state.cachedTokens)
+
+	require.NoError(t, p.PreRequest(ctx, req, primaryOnly("default", endpoints[0])))
+	_, err = plugin.ReadPluginStateKey[*bestAvailableState](p.pluginState, req.RequestID, bestAvailableStateKey)
+	assert.Error(t, err, "PreRequest deletes the request's state")
 }

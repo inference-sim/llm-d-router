@@ -1,4 +1,5 @@
 # The patch budget: lines the fork may change in files it shares with upstream.
-# New files are free; the fork rebases onto upstream_base on each release.
-upstream_base = d446dd3cb6ce0ce96e00b3b9b66fa681e29ffb7a
+# New files are free. Each llm-d release is merged into llm-d-r (never rebased: BLIS pins
+# llm-d-r commits by hash), and upstream_base moves to that release.
+upstream_base = b9393d1a9f1d5a72ecd86f8d2b643ab54c2a9b92
 max_changed_upstream_lines = 450
