@@ -32,20 +32,39 @@ set -euo pipefail
 APIDIFF=golang.org/x/exp/cmd/apidiff@v0.0.0-20260908205506-85c1c2202aba
 mode=${1:?usage: embed-apidiff.sh fork|contract}
 
-# Only well-formed fork release tags count: vX.Y.Z-blis (the release before this rule) or
-# vX.Y.Z-blis.N. Anything else matching the glob (a stray or experimental tag) is ignored.
-prev=$(git -c versionsort.suffix=- tag --merged HEAD --list 'v*-blis*' --sort=-v:refname |
-  grep -E '^v[0-9]+\.[0-9]+\.[0-9]+-blis(\.[0-9]+)?$' | head -n1 || true)
+# release is the upstream release (its vX.Y.Z tag) that a commit's hack/hosting-lint/budget.txt
+# names as upstream_base, or "" when that commit records none.
+release() {
+  local base
+  base=$(git show "$1:hack/hosting-lint/budget.txt" 2>/dev/null | sed -n 's/^upstream_base *= *//p')
+  [ -n "$base" ] || return 0
+  git tag --points-at "$base" --list 'v[0-9]*.[0-9]*.[0-9]*' | grep -Ev -- '-' | sort -V | tail -n1 || true
+}
+
+# The baseline is the newest fork release reachable from HEAD. A fork release is, by definition
+# (the fork's tag rule: vX.Y.Z-blis.N, where X.Y.Z is the upstream release merged into llm-d-r),
+# a tag that is well formed (vX.Y.Z-blis.N, or vX.Y.Z-blis before the rule) AND whose X.Y.Z is the
+# upstream release its own budget.txt records as upstream_base. A tag failing either test (a stray,
+# experimental or mistyped tag such as v999.0.0-blis.1 on a v1.0.0 base) is not a release and is
+# skipped, so it can neither redirect nor disable the comparison.
+prev=""
+for t in $(git -c versionsort.suffix=- tag --merged HEAD --list 'v*-blis*' --sort=-v:refname); do
+  [[ "$t" =~ ^(v[0-9]+\.[0-9]+\.[0-9]+)-blis(\.[0-9]+)?$ ]] || continue
+  if [ "$(release "$t")" = "${BASH_REMATCH[1]}" ]; then
+    prev=$t
+    break
+  fi
+  echo "skipping $t: not a fork release (its upstream_base is not ${BASH_REMATCH[1]})" >&2
+done
 if [ -z "$prev" ]; then
-  echo "no v*-blis* tag reachable from HEAD: nothing to compare against"
+  echo "no fork release tag reachable from HEAD: nothing to compare against"
   exit 0
 fi
 
 major() { sed -E 's/^v([0-9]+)\..*/\1/' <<<"$1"; }
-base=$(sed -n 's/^upstream_base *= *//p' hack/hosting-lint/budget.txt)
-upstream=$(git tag --points-at "$base" --list 'v[0-9]*.[0-9]*.[0-9]*' | grep -Ev -- '-' | sort -V | tail -n1 || true)
+upstream=$(release HEAD)
 if [ -z "$upstream" ]; then
-  echo "upstream_base $base carries no vX.Y.Z release tag (fetch the upstream tags)" >&2
+  echo "upstream_base in hack/hosting-lint/budget.txt carries no vX.Y.Z release tag (fetch the upstream tags)" >&2
   exit 1
 fi
 if [ "$(major "$upstream")" != "$(major "$prev")" ]; then
