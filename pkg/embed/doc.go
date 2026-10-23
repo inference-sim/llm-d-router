@@ -23,8 +23,12 @@ limitations under the License.
 // producers) stays behind New, so an upstream release that restructures those internals is
 // absorbed here and reaches the host as a pin bump.
 //
-// The package changes how the router is hosted, never what it decides. It assembles the router
-// through runner.Embed, the runner's own startup path, on a hosting.Runtime adapted from the
-// host's embed.Runtime, and feeds it requests, endpoints, responses and KV events the way the
-// ext_proc server, the Kubernetes reconcilers and the KV-event subscriber would.
+// The package changes how the router is hosted, never how it decides: given the same inputs, the
+// router's plugins decide as they do in a deployment. It assembles the router through
+// runner.Embed, the runner's own startup path, on a hosting.Runtime adapted from the host's
+// embed.Runtime, and feeds it requests, endpoints, responses and KV events the way the ext_proc
+// server, the Kubernetes reconcilers and the KV-event subscriber would. A request carries only
+// the headers embed.Request describes (method, path, content type, request ID, objective,
+// fairness ID, TTFT objective, TTL); a plugin that reads any other request header sees it absent,
+// as it would for a client that sends none.
 package embed

@@ -32,21 +32,22 @@ import (
 // hostRuntime is the router's hosting.Runtime on a host's embed.Runtime. The router's
 // components keep reading hosting.Runtime; the host implements only the contract.
 //
-// It also orders the router's shutdown. Some router loops wait for the goroutines they started
+// It also orders the router's shutdown. Some router loops wait for goroutines they started
 // without parking (the flow-control processor's sync.WaitGroup on its cleanup sweep), so when Stop
 // readies every loop at once, a parent resumed before its children would block the host forever.
-// Once stopping, a parked goroutine is therefore resumed only after every goroutine started after
-// it has finished: children end before their parents, whatever order the host resumes them in.
-// This relies on the contract's baton model (one router goroutine runs at a time), which tells
-// the adapter which goroutine is parking.
+// Once stopping, a parked goroutine is therefore resumed only when no goroutine started after it
+// is parked and ready: of the goroutines that can run, the newest runs first, whatever order the
+// host resumes them in. A later goroutine that cannot run yet (it waits for an earlier one) holds
+// nothing back. This relies on the contract's baton model (one router goroutine runs at a time),
+// which tells the adapter which goroutine is parking.
 type hostRuntime struct {
 	rt  contract.Runtime
 	clk hostClock
 
 	mu       sync.Mutex
 	nextID   int
-	current  int          // the goroutine running now; 0 for the host's
-	live     map[int]bool // goroutines started with Go that have not finished
+	current  int                 // the goroutine running now; 0 for the host's
+	parked   map[int]func() bool // parked goroutines and what each waits for
 	stopping bool
 }
 
@@ -65,7 +66,7 @@ var (
 // tickers, and serving outbound HTTP through rt when rt implements embed.RoundTripper. stop
 // starts the shutdown order.
 func adaptRuntime(rt contract.Runtime) (_ hosting.Runtime, stop func()) {
-	h := &hostRuntime{rt: rt, clk: hostClock{rt: rt}, live: map[int]bool{}}
+	h := &hostRuntime{rt: rt, clk: hostClock{rt: rt}, parked: map[int]func() bool{}}
 	if rtt, ok := rt.(contract.RoundTripper); ok {
 		return hostServingRuntime{hostRuntime: h, rt: rtt}, h.stop
 	}
@@ -84,15 +85,9 @@ func (h *hostRuntime) Go(fn func()) {
 	h.mu.Lock()
 	h.nextID++
 	id, parent := h.nextID, h.current
-	h.live[id] = true
 	h.mu.Unlock()
 	h.rt.Go(func() {
 		h.setCurrent(id)
-		defer func() {
-			h.mu.Lock()
-			delete(h.live, id)
-			h.mu.Unlock()
-		}()
 		fn()
 	})
 	h.setCurrent(parent)
@@ -101,8 +96,12 @@ func (h *hostRuntime) Go(fn func()) {
 func (h *hostRuntime) Park(ready func() bool) {
 	h.mu.Lock()
 	id := h.current
+	h.parked[id] = ready
 	h.mu.Unlock()
 	h.rt.Park(func() bool { return ready() && h.mayResume(id) })
+	h.mu.Lock()
+	delete(h.parked, id)
+	h.mu.Unlock()
 	h.setCurrent(id)
 }
 
@@ -112,16 +111,23 @@ func (h *hostRuntime) setCurrent(id int) {
 	h.mu.Unlock()
 }
 
-// mayResume reports whether goroutine id may resume: always, until the router stops; then only
-// once every goroutine started after it has finished.
+// mayResume reports whether goroutine id, itself ready, may resume: always, until the router
+// stops; then only when no goroutine started after it is parked and ready.
 func (h *hostRuntime) mayResume(id int) bool {
 	h.mu.Lock()
-	defer h.mu.Unlock()
 	if !h.stopping {
+		h.mu.Unlock()
 		return true
 	}
-	for other := range h.live { // a membership test: order does not matter
+	var newer []func() bool
+	for other, ready := range h.parked { // an existence test: order does not matter
 		if other > id {
+			newer = append(newer, ready)
+		}
+	}
+	h.mu.Unlock()
+	for _, ready := range newer {
+		if ready() {
 			return false
 		}
 	}

@@ -153,3 +153,6 @@ require (
 	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 // indirect
 	sigs.k8s.io/randfill v1.0.0 // indirect
 )
+
+// TEMPORARY (review only): builds against inference-sim/blis-schemas#100's head on the namasl fork. Removed when v0.6.0 is tagged, before this PR leaves draft.
+replace github.com/inference-sim/blis-schemas => github.com/namasl/blis-schemas v0.0.0-20261023200325-699671fc15bd

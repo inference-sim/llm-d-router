@@ -32,7 +32,10 @@ set -euo pipefail
 APIDIFF=golang.org/x/exp/cmd/apidiff@v0.0.0-20260908205506-85c1c2202aba
 mode=${1:?usage: embed-apidiff.sh fork|contract}
 
-prev=$(git -c versionsort.suffix=- tag --merged HEAD --list 'v*-blis*' --sort=-v:refname | head -n1)
+# Only well-formed fork release tags count: vX.Y.Z-blis (the release before this rule) or
+# vX.Y.Z-blis.N. Anything else matching the glob (a stray or experimental tag) is ignored.
+prev=$(git -c versionsort.suffix=- tag --merged HEAD --list 'v*-blis*' --sort=-v:refname |
+  grep -E '^v[0-9]+\.[0-9]+\.[0-9]+-blis(\.[0-9]+)?$' | head -n1 || true)
 if [ -z "$prev" ]; then
   echo "no v*-blis* tag reachable from HEAD: nothing to compare against"
   exit 0

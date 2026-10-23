@@ -18,6 +18,11 @@ package embed
 
 import (
 	"errors"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"path/filepath"
+	"strconv"
 	"testing"
 
 	contract "github.com/inference-sim/blis-schemas/embed"
@@ -27,12 +32,13 @@ import (
 
 // TestClassify_AllowList: each router outcome maps to exactly one RejectKind, and anything else
 // is Unclassified with the error's full text, never counted as shedding. Every drop reason the
-// router defines appears here, so an upstream release that adds one fails until it is mapped.
+// router declares must appear here (checked against pkg/common/error's source), so an upstream
+// release that adds one fails until it is mapped.
 func TestClassify_AllowList(t *testing.T) {
 	dropped := func(code string, r errcommon.RequestDroppedReason) error {
 		return errcommon.Error{Code: code, Msg: "m", Headers: map[string]string{errcommon.RequestDroppedReasonHeaderKey: string(r)}}
 	}
-	for _, tc := range []struct {
+	cases := []struct {
 		name string
 		err  error
 		want contract.RejectKind
@@ -54,7 +60,22 @@ func TestClassify_AllowList(t *testing.T) {
 		{"not found", errcommon.Error{Code: errcommon.NotFound, Msg: "m"}, contract.Unclassified},
 		{"untyped scheduler failure", errcommon.Error{Code: errcommon.ResourceExhausted, Msg: "failed to find target endpoint: x"}, contract.Unclassified},
 		{"untyped error", errors.New("boom"), contract.Unclassified},
-	} {
+	}
+	covered := map[string]bool{}
+	for _, tc := range cases {
+		var e errcommon.Error
+		if errors.As(tc.err, &e) {
+			if r, ok := e.Headers[errcommon.RequestDroppedReasonHeaderKey]; ok {
+				covered[r] = true
+			}
+		}
+	}
+	for _, r := range declaredDropReasons(t) {
+		if !covered[r] {
+			t.Errorf("drop reason %q is declared in pkg/common/error but has no case here; map it in classify and add it", r)
+		}
+	}
+	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			got, msg := classify(tc.err)
 			if got != tc.want {
@@ -65,4 +86,41 @@ func TestClassify_AllowList(t *testing.T) {
 			}
 		})
 	}
+}
+
+// declaredDropReasons are the values of every RequestDroppedReason constant in pkg/common/error.
+func declaredDropReasons(t *testing.T) []string {
+	t.Helper()
+	files, err := filepath.Glob(filepath.Join("..", "common", "error", "*.go"))
+	if err != nil || len(files) == 0 {
+		t.Fatalf("pkg/common/error sources: %v", err)
+	}
+	var out []string
+	fset := token.NewFileSet()
+	for _, f := range files {
+		file, err := parser.ParseFile(fset, f, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ast.Inspect(file, func(n ast.Node) bool {
+			vs, ok := n.(*ast.ValueSpec)
+			if !ok {
+				return true
+			}
+			if id, ok := vs.Type.(*ast.Ident); !ok || id.Name != "RequestDroppedReason" {
+				return true
+			}
+			for _, v := range vs.Values {
+				if lit, ok := v.(*ast.BasicLit); ok && lit.Kind == token.STRING {
+					s, _ := strconv.Unquote(lit.Value)
+					out = append(out, s)
+				}
+			}
+			return true
+		})
+	}
+	if len(out) == 0 {
+		t.Fatal("found no RequestDroppedReason constants")
+	}
+	return out
 }

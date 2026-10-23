@@ -79,6 +79,40 @@ func TestStopResumesChildrenFirst(t *testing.T) {
 	}
 }
 
+// TestStopDoesNotHoldAnEarlierGoroutineForALaterOneThatWaitsOnIt: a later goroutine that, at
+// Stop, can only proceed once an earlier one has run does not hold the earlier one back.
+func TestStopDoesNotHoldAnEarlierGoroutineForALaterOneThatWaitsOnIt(t *testing.T) {
+	host := embedtest.NewRuntime(1)
+	hrt, stopping := adaptRuntime(host)
+	ctx, cancel := context.WithCancel(hosting.Into(context.Background(), hrt))
+	released := false
+	var order []string
+	hrt.Go(func() { // earlier: ends at Stop and releases the later one
+		hrt.Park(func() bool { return ctx.Err() != nil })
+		released = true
+		order = append(order, "earlier")
+	})
+	hrt.Go(func() { // later: waits for the earlier one, whatever its context says
+		hrt.Park(func() bool { return released })
+		order = append(order, "later")
+	})
+	stopping()
+	cancel()
+	done := make(chan struct{})
+	go func() { host.Settle(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(30 * time.Second): //blis:wallclock-ok a test's hang guard
+		t.Fatal("Stop deadlocked: the earlier goroutine was held back for a later one waiting on it")
+	}
+	if len(order) != 2 || order[0] != "earlier" || order[1] != "later" {
+		t.Fatalf("shutdown order %v, want [earlier later]", order)
+	}
+	if n := host.Live(); n != 0 {
+		t.Errorf("%d goroutines live after Stop", n)
+	}
+}
+
 // TestAdaptedClock: the clock the router reads is the host's: Now, timers and tickers.
 func TestAdaptedClock(t *testing.T) {
 	host := embedtest.NewRuntime(1)
