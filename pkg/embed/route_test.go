@@ -70,7 +70,7 @@ func TestRequestHeaderMap(t *testing.T) {
 // sees never depends on map iteration (INV-6).
 func TestHeaderMapIsSorted(t *testing.T) {
 	h := headerMap(map[string]string{"x-b": "2", ":path": "/p", "x-a": "1", "content-type": "c"})
-	var keys []string
+	keys := make([]string, 0, len(h.Headers))
 	for _, v := range h.Headers {
 		keys = append(keys, v.Key)
 	}
