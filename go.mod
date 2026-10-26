@@ -155,4 +155,4 @@ require (
 )
 
 // TEMPORARY (review only): builds against inference-sim/blis-schemas#100's head on the namasl fork. Removed when v0.7.0 is tagged, before this PR leaves draft.
-replace github.com/inference-sim/blis-schemas => github.com/namasl/blis-schemas v0.0.0-20261026135607-1f9912ab119f
+replace github.com/inference-sim/blis-schemas => github.com/namasl/blis-schemas v0.0.0-20261026171232-ef52bdfae212
