@@ -21,7 +21,7 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/golang-lru/v2 v2.0.7
-	github.com/inference-sim/blis-schemas v0.6.0
+	github.com/inference-sim/blis-schemas v0.7.0
 	github.com/jellydator/ttlcache/v3 v3.4.1
 	github.com/llm-d/llm-d-async/api v1.0.0
 	github.com/llm-d/llm-d-async/producer v1.0.0
@@ -154,5 +154,5 @@ require (
 	sigs.k8s.io/randfill v1.0.0 // indirect
 )
 
-// TEMPORARY (review only): builds against inference-sim/blis-schemas#100's head on the namasl fork. Removed when v0.6.0 is tagged, before this PR leaves draft.
+// TEMPORARY (review only): builds against inference-sim/blis-schemas#100's head on the namasl fork. Removed when v0.7.0 is tagged, before this PR leaves draft.
 replace github.com/inference-sim/blis-schemas => github.com/namasl/blis-schemas v0.0.0-20261023200325-699671fc15bd
