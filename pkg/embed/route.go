@@ -36,9 +36,6 @@ import (
 	"github.com/llm-d/llm-d-router/pkg/epp/metadata"
 )
 
-// prefillerHeader is the header the disaggregation profile handler sets for the P/D sidecar.
-const prefillerHeader = "x-llm-d-prefiller-host-port"
-
 // schedulerFallbackMsg starts the Director's message for a scheduler failure that carries no
 // typed error (requestcontrol/director.go). It shares ResourceExhausted with admission denials but
 // is not one.
@@ -127,7 +124,9 @@ func (r *Router) decide(f *flight, err error, done func(contract.Flight, contrac
 		IncomingModel: rc.IncomingModelName,
 		TargetModel:   rc.TargetModelName,
 	}
-	if hp, ok := metadata.GetLowerCaseHeaderValue(rc.Request.Headers, prefillerHeader); ok && hp != "" {
+	// The disaggregation profile handler sets it with routing.SetRoutingHeader, which writes the
+	// canonical name and its legacy alias with one value.
+	if hp, ok := metadata.GetLowerCaseHeaderValue(rc.Request.Headers, routing.PrefillEndpointHeader); ok && hp != "" {
 		d.Prefill = strings.Split(hp, ",")[0]
 	}
 	for _, name := range routing.HeaderNames(routing.EncoderEndpointsHeader) {
