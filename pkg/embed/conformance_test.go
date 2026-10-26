@@ -134,6 +134,10 @@ schedulingProfiles:
     weight: 10
 `
 
+// unauditedConfig is routeConfig plus header-label-affinity-scorer, a plugin type the fork has
+// not audited for hosting (refusal step 3: refused even when the host allows it).
+var unauditedConfig = strings.Replace(routeConfig, "- type: queue-scorer\n", "- type: queue-scorer\n- type: header-label-affinity-scorer\n", 1)
+
 func poolConfig(epc string) contract.Config {
 	return contract.Config{Flags: []string{"--pool-name=vllm"}, Config: []byte(epc), Manifests: []byte(testPool)}
 }
@@ -189,5 +193,8 @@ func TestConformance(t *testing.T) {
 		Evict:      &evict,
 		Refuse:     poolConfig(routeConfig),
 		RefuseType: "queue-scorer",
+
+		Unaudited:       "header-label-affinity-scorer",
+		UnauditedConfig: poolConfig(unauditedConfig),
 	})
 }
