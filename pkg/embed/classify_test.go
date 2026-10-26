@@ -18,22 +18,20 @@ package embed
 
 import (
 	"errors"
-	"go/ast"
-	"go/parser"
-	"go/token"
-	"path/filepath"
-	"strconv"
+	"go/constant"
+	"go/types"
 	"testing"
 
 	contract "github.com/inference-sim/blis-schemas/embed"
+	"golang.org/x/tools/go/packages"
 
 	errcommon "github.com/llm-d/llm-d-router/pkg/common/error"
 )
 
 // TestClassify_AllowList: each router outcome maps to exactly one RejectKind, and anything else
 // is Unclassified with the error's full text, never counted as shedding. Every drop reason the
-// router declares must appear here (checked against pkg/common/error's source), so an upstream
-// release that adds one fails until it is mapped.
+// router declares (every constant of type RequestDroppedReason in pkg/common/error, by type
+// checking) must appear here, so an upstream release that adds one fails until it is mapped.
 func TestClassify_AllowList(t *testing.T) {
 	dropped := func(code string, r errcommon.RequestDroppedReason) error {
 		return errcommon.Error{Code: code, Msg: "m", Headers: map[string]string{errcommon.RequestDroppedReasonHeaderKey: string(r)}}
@@ -88,36 +86,27 @@ func TestClassify_AllowList(t *testing.T) {
 	}
 }
 
-// declaredDropReasons are the values of every RequestDroppedReason constant in pkg/common/error.
+// declaredDropReasons are the values of every constant of type RequestDroppedReason that
+// pkg/common/error declares, found by type-checking the package, so every declaration form
+// counts (an explicit or inherited type, a conversion, a reference to another constant).
 func declaredDropReasons(t *testing.T) []string {
 	t.Helper()
-	files, err := filepath.Glob(filepath.Join("..", "common", "error", "*.go"))
-	if err != nil || len(files) == 0 {
-		t.Fatalf("pkg/common/error sources: %v", err)
+	pkgs, err := packages.Load(&packages.Config{Mode: packages.NeedTypes | packages.NeedName}, "github.com/llm-d/llm-d-router/pkg/common/error")
+	if err != nil || len(pkgs) != 1 || len(pkgs[0].Errors) > 0 {
+		t.Fatalf("loading pkg/common/error: %v %v", err, pkgs)
+	}
+	scope := pkgs[0].Types.Scope()
+	reason := scope.Lookup("RequestDroppedReason")
+	if reason == nil {
+		t.Fatal("pkg/common/error declares no RequestDroppedReason")
 	}
 	var out []string
-	fset := token.NewFileSet()
-	for _, f := range files {
-		file, err := parser.ParseFile(fset, f, nil, 0)
-		if err != nil {
-			t.Fatal(err)
+	for _, name := range scope.Names() {
+		c, ok := scope.Lookup(name).(*types.Const)
+		if !ok || !types.Identical(c.Type(), reason.Type()) {
+			continue
 		}
-		ast.Inspect(file, func(n ast.Node) bool {
-			vs, ok := n.(*ast.ValueSpec)
-			if !ok {
-				return true
-			}
-			if id, ok := vs.Type.(*ast.Ident); !ok || id.Name != "RequestDroppedReason" {
-				return true
-			}
-			for _, v := range vs.Values {
-				if lit, ok := v.(*ast.BasicLit); ok && lit.Kind == token.STRING {
-					s, _ := strconv.Unquote(lit.Value)
-					out = append(out, s)
-				}
-			}
-			return true
-		})
+		out = append(out, constant.StringVal(c.Val()))
 	}
 	if len(out) == 0 {
 		t.Fatal("found no RequestDroppedReason constants")
