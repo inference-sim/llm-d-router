@@ -18,6 +18,9 @@ jobs:
           fetch-depth: 0
       - name: Fetch upstream
         run: git remote add upstream https://github.com/llm-d/llm-d-router.git && git fetch --no-tags upstream
+      # The fork's own tags (vX.Y.Z-blis.N) and upstream's release tags, for the apidiff steps.
+      - name: Fetch tags
+        run: git fetch --tags origin && git fetch --no-tags upstream 'refs/tags/v*:refs/tags/v*'
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -39,5 +42,15 @@ jobs:
           if [ -n "$changed" ]; then unformatted=$(gofmt -l $changed); fi
           if [ -n "$added" ]; then unformatted="$unformatted$(go run golang.org/x/tools/cmd/goimports@v0.50.0 -local github.com/llm-d/llm-d-router -l $added)"; fi
           if [ -n "$unformatted" ]; then echo "not formatted:"; echo "$unformatted"; exit 1; fi
+      # pkg/embed's tests include the blis-schemas embed conformance suite (embedtest) against New.
       - name: Seam and converted packages
-        run: go test ./pkg/common/hosting/... ./pkg/epp/requestcontrol/... ./pkg/epp/scheduling/... ./pkg/epp/datastore/... ./pkg/epp/datalayer/... ./pkg/epp/flowcontrol/... ./pkg/epp/framework/... ./pkg/epp/handlers/... ./cmd/epp/...
+        run: go test ./pkg/common/hosting/... ./pkg/embed/... ./pkg/epp/requestcontrol/... ./pkg/epp/scheduling/... ./pkg/epp/datastore/... ./pkg/epp/datalayer/... ./pkg/epp/flowcontrol/... ./pkg/epp/framework/... ./pkg/epp/handlers/... ./cmd/epp/...
+      - name: Embed conformance (blis-schemas embedtest against pkg/embed.New)
+        run: go test ./pkg/embed/ -run TestConformance -count=1 -v
+      # The fork's versioned surface is pkg/embed.New, its implementation of the blis-schemas embed
+      # contract. Between v*-blis* tags on one upstream major both change only compatibly; the
+      # script explains the first release (a tag before pkg/embed passes).
+      - name: pkg/embed API compatible with the latest -blis tag
+        run: bash hack/embed-apidiff.sh fork
+      - name: blis-schemas embed contract compatible with the latest -blis tag's pin
+        run: bash hack/embed-apidiff.sh contract
