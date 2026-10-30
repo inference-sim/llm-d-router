@@ -32,6 +32,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	"github.com/llm-d/llm-d-router/pkg/common/hosting"
 	logutil "github.com/llm-d/llm-d-router/pkg/common/observability/logging"
 	"github.com/llm-d/llm-d-router/pkg/common/observability/semconv"
 	"github.com/llm-d/llm-d-router/pkg/common/observability/tracing"
@@ -201,7 +202,11 @@ func (p *Plugin) Filter(ctx context.Context, request *fwksched.InferenceRequest,
 	}
 
 	// Exploration: skip the gate with configured probability.
-	if rand.Float64() < p.config.ExplorationProbability { //#nosec G404 -- exploration sampling, not security-sensitive
+	explore := rand.Float64 //#nosec G404 -- exploration sampling, not security-sensitive
+	if rt := hosting.From(ctx); rt.Hosted() {
+		explore = rt.Rand(PluginType).Float64
+	}
+	if explore() < p.config.ExplorationProbability {
 		logger.V(logutil.DEBUG).Info("PrefixCacheAffinityFilter: exploration skip, keeping all",
 			"affinityThreshold", p.config.AffinityThreshold, "total", len(endpoints))
 		recordDecision(p.typedName.Name, outcomeExploration)

@@ -56,6 +56,8 @@ var audited = map[string]bool{
 	"label-selector-filter":            true,
 	"topology-affinity-filter":         true,
 	"topology-stamp-handler":           true,
+	// its exploration draw is the runtime's; hostingRefusal refuses the latency-predictor TTFT source
+	"prefix-cache-affinity-filter": true,
 	// scorers
 	"queue-scorer":                 true,
 	"kv-cache-utilization-scorer":  true,
@@ -120,7 +122,6 @@ var hostingReasons = map[string]string{
 	"latency-scorer":                    "it consumes the external latency predictor",
 	"latency-slo-admitter":              "it consumes the external latency predictor",
 	"slo-headroom-tier-filter":          "it consumes the external latency predictor",
-	"prefix-cache-affinity-filter":      "it consumes the external latency predictor",
 	"latency-observer-producer-hub":     "its clock reads have not been moved onto the hosting runtime",
 	"latency-observation-scorer-hub":    "its exploration draws from process-wide randomness",
 	"session-state-producer":            "its clock reads have not been moved onto the hosting runtime",

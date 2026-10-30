@@ -283,7 +283,10 @@ func topologyExtractorFacts(name string, params map[string]any) contract.Topolog
 //     profile; a topology consumer needs the topology extractor it names;
 //   - a token-producer whose vLLM backend discovers endpoints probes pods on its own schedule;
 //   - a precise-prefix-cache-producer whose index is in Redis reaches the network, and the
-//     cost-aware index ranges a sync.Map, so its order is not reproducible.
+//     cost-aware index ranges a sync.Map, so its order is not reproducible;
+//   - a prefix-cache-affinity-filter whose load gate reads TTFT from the latency predictor
+//     (ttftSource latencyPredictor) consumes an external service; its default source,
+//     prefillThroughput, reads the in-flight load.
 func hostingRefusal(doc configDoc) error {
 	if doc.topologyOK {
 		if err := topologyRefusal(doc.topology); err != nil {
@@ -299,6 +302,11 @@ func hostingRefusal(doc configDoc) error {
 			if v, _ := p.Parameters["vllm"].(map[string]any); v != nil && enabled(v["endpointDiscovery"]) {
 				return fmt.Errorf("plugin %q discovers render endpoints (vllm.endpointDiscovery), probing pods on its own "+
 					"schedule outside the simulation; give its vLLM backend a fixed url, or use the estimate backend", p.name())
+			}
+		case "prefix-cache-affinity-filter":
+			if src, _ := p.Parameters["ttftSource"].(string); src == "latencyPredictor" {
+				return fmt.Errorf("plugin %q reads TTFT from the latency predictor (ttftSource latencyPredictor), an "+
+					"external service; use ttftSource prefillThroughput, which reads the in-flight load", p.name())
 			}
 		case "precise-prefix-cache-producer":
 			indexer, _ := p.Parameters["indexerConfig"].(map[string]any)

@@ -267,7 +267,7 @@ pkg/epp/framework/plugins/requesthandling/parsers/openai/openai.go	headerValue	r
 pkg/epp/framework/plugins/requesthandling/parsers/sglanghttp/sglanghttp.go	isEventStream	range-map	1	for key, value := range headers {
 pkg/epp/framework/plugins/requesthandling/parsers/util/json.go	UnmarshalEnvelope	range-map	1	for key, raw := range fields {
 pkg/epp/framework/plugins/requesthandling/parsers/util/json.go	UnmarshalMapWithRawField	range-map	1	for key, raw := range fields {
-pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/plugin.go	Plugin.Filter	rand.Float64	1	if rand.Float64() < p.config.ExplorationProbability { //#nosec G404 -- exploration sampling, not security-sensitive
+pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/plugin.go	Plugin.Filter	rand.Float64	1	explore := rand.Float64 //#nosec G404 -- exploration sampling, not security-sensitive
 pkg/epp/framework/plugins/scheduling/filter/sloheadroomtier/plugin.go	Plugin.Filter	rand.Float64	1	if rand.Float64() < p.config.EpsilonExploreNeg { //#nosec G404 -- exploration sampling, not security-sensitive
 pkg/epp/framework/plugins/scheduling/picker/common.go	RandFor	picker.PickerRand	1	return PickerRand
 pkg/epp/framework/plugins/scheduling/picker/common.go	ShuffleScoredEndpoints	picker.PickerRand	1	PickerRand.Shuffle(len(scoredEndpoints), func(i, j int) {

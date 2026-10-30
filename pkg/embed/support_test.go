@@ -170,6 +170,8 @@ func TestNewRefusals(t *testing.T) {
 		{"endpoint discovery", withConfig(pd), refusedPrefix + `plugin "token-producer" discovers render endpoints (vllm.endpointDiscovery)`},
 		{"redis index", withConfig(precise("redisConfig:\n          address: x")), refusedPrefix + `plugin "precise-prefix-cache-producer" keeps its index in Redis, an external service`},
 		{"cost-aware index", withConfig(precise("costAwareMemoryConfig:\n          size: 1GiB")), refusedPrefix + `plugin "precise-prefix-cache-producer" uses the cost-aware index`},
+		{"affinity filter on the latency predictor", withConfig("plugins:\n- type: prefix-cache-affinity-filter\n  parameters:\n    ttftSource: latencyPredictor\n"),
+			refusedPrefix + `plugin "prefix-cache-affinity-filter" reads TTFT from the latency predictor (ttftSource latencyPredictor), an external service`},
 		{"peer topology", withConfig("plugins:\n- type: topology-extractor\n- type: topology-affinity-filter\n  parameters:\n    peerTopologyHeader: x\n"),
 			refusedPrefix + "topology-affinity-filter peerTopologyHeader requires a coordinator; BLIS embeds one EPP"},
 		{"topology without extractor", withConfig("plugins:\n- type: topology-affinity-filter\n"),
@@ -295,5 +297,18 @@ func TestPoolAndFlowControl(t *testing.T) {
 	}
 	if !r.IdleSkippable() {
 		t.Error("the hold configuration has no loop counting its own ticks")
+	}
+}
+
+// TestPrefixCacheAffinityFilterIsHosted: the filter on its default TTFT source (the in-flight
+// load, prefillThroughput) builds under a hosted runtime, as the router's prefix-affinity
+// guide configures it; only the latency-predictor source is refused (TestNewRefusals).
+func TestPrefixCacheAffinityFilterIsHosted(t *testing.T) {
+	cfg := withConfig("plugins:\n- type: approx-prefix-cache-producer\n- type: inflight-load-producer\n" +
+		"- type: prefix-cache-affinity-filter\n  parameters:\n    affinityThreshold: 0.5\n    maxTTFTPenaltyMs: 4500\n" +
+		"    peakPrefillThroughput: 15000\n- type: token-load-scorer\n" +
+		"schedulingProfiles:\n- name: default\n  plugins:\n  - pluginRef: prefix-cache-affinity-filter\n  - pluginRef: token-load-scorer\n")
+	if _, err := build(t, cfg); err != nil {
+		t.Fatalf("the default-source prefix-cache-affinity-filter is refused: %v", err)
 	}
 }
