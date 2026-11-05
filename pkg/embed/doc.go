@@ -15,9 +15,10 @@ limitations under the License.
 */
 
 // Package embed runs the router inside a host process (a discrete-event simulator) through the
-// contract in github.com/inference-sim/blis-schemas/embed. New is that contract's Constructor.
+// contract in github.com/inference-sim/blis-substrate/contracts/embed. New is that contract's
+// Constructor.
 //
-// This package is the fork's versioned surface: a host imports only New and the blis-schemas
+// This package is the fork's versioned surface: a host imports only New and the contracts/embed
 // types. Everything here that knows the router's internals (its flag set, configuration schema,
 // request handlers, Director, datastore, pod reconciler, flow-control registry and KV-event
 // producers) stays behind New, so an upstream release that restructures those internals is

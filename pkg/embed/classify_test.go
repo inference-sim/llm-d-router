@@ -22,7 +22,7 @@ import (
 	"go/types"
 	"testing"
 
-	contract "github.com/inference-sim/blis-schemas/embed"
+	contract "github.com/inference-sim/blis-substrate/contracts/embed"
 	"golang.org/x/tools/go/packages"
 
 	errcommon "github.com/llm-d/llm-d-router/pkg/common/error"

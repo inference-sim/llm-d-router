@@ -22,8 +22,8 @@ import (
 	"testing"
 	"time"
 
-	contract "github.com/inference-sim/blis-schemas/embed"
-	"github.com/inference-sim/blis-schemas/embed/embedtest"
+	"github.com/inference-sim/blis-substrate/contracts/conformance/embedtest"
+	contract "github.com/inference-sim/blis-substrate/contracts/embed"
 
 	"github.com/llm-d/llm-d-router/pkg/common/hosting"
 )
