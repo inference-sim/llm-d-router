@@ -1,0 +1,14 @@
+# Owners of the inference-sim fork of llm-d-router (branch llm-d-r).
+#
+# GitHub reads .github/CODEOWNERS before the root CODEOWNERS, so this file, which the fork adds,
+# governs the fork, and upstream's root CODEOWNERS stays as upstream wrote it. The teams that
+# file names belong to the llm-d organization and own nothing here.
+#
+# The fork's owners review every change to llm-d-r. A change to an upstream file must be one of
+# the hosting kinds BLIS allows (design RTR-2); the paths the fork wrote are BLIS's own code:
+# .github/CODEOWNERS, .github/workflows/hosting-lint.yml, .github/workflows/fork-policy.yml,
+# pkg/embed/, pkg/common/hosting/, cmd/epp/runner/embed.go, hack/hosting-lint/,
+# hack/fork-policy/, hack/embed-apidiff.sh, and the files named hosted.go or *_hosted.go with
+# their tests.
+
+* @sriumcp @jgchn @namasl
