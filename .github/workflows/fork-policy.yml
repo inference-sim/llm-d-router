@@ -3,6 +3,8 @@
 #   history  llm-d-r keeps its history, and llm-d releases are merged into it, never rebased (RTR-1)
 #   commits  each commit written for BLIS is signed, signed off by a person, and names agent help
 #            in one Assisted-by line; commits of the upstream release are excepted (X20)
+#   toolchain  (in hosting-lint.yml's hosting job) the go line and the go command against
+#            contracts/toolchain of the pinned blis-substrate (LIF-2)
 #   landed   on a push to llm-d-r: the pull request landed as a merge commit (RTR-1)
 #
 # The history and commits jobs are required checks on llm-d-r, by their names. The landed job
