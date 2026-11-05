@@ -22,7 +22,7 @@ import (
 	"fmt"
 	"sort"
 
-	contract "github.com/inference-sim/blis-schemas/embed"
+	contract "github.com/inference-sim/blis-substrate/contracts/embed"
 
 	"github.com/llm-d/llm-d-router/pkg/common/hosting"
 	fwkplugin "github.com/llm-d/llm-d-router/pkg/epp/framework/interface/plugin"

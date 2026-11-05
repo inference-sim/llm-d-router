@@ -24,7 +24,7 @@ import (
 	"sort"
 	"strings"
 
-	contract "github.com/inference-sim/blis-schemas/embed"
+	contract "github.com/inference-sim/blis-substrate/contracts/embed"
 	"github.com/spf13/pflag"
 	"sigs.k8s.io/yaml"
 

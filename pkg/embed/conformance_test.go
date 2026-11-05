@@ -23,8 +23,8 @@ import (
 	"strings"
 	"testing"
 
-	contract "github.com/inference-sim/blis-schemas/embed"
-	"github.com/inference-sim/blis-schemas/embed/embedtest"
+	"github.com/inference-sim/blis-substrate/contracts/conformance/embedtest"
+	contract "github.com/inference-sim/blis-substrate/contracts/embed"
 )
 
 // testPool is an InferencePool selecting app=vllm, with an InferenceObjective named
@@ -178,7 +178,7 @@ func renderEngines(r *http.Request) (*http.Response, error) {
 	return embedtest.Respond(r, http.StatusOK, "application/json", string(b)), nil
 }
 
-// TestConformance runs the blis-schemas embed conformance suite against New.
+// TestConformance runs the blis-substrate embed conformance suite (contracts/conformance/embedtest) against New.
 func TestConformance(t *testing.T) {
 	evict := poolConfig(evictConfig)
 	embedtest.Run(t, embedtest.Suite{

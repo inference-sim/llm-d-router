@@ -17,20 +17,32 @@
 # releases on one upstream major (fork tags are vX.Y.Z-blis.N; see pkg/embed):
 #
 #   embed-apidiff.sh fork      pkg/embed against the latest v*-blis* tag reachable from HEAD
-#   embed-apidiff.sh contract  blis-schemas' embed package, between the version that tag's go.mod
-#                              pins and the version go.mod pins now
+#   embed-apidiff.sh contract  the embed contract, between the version that tag's go.mod pins and
+#                              the version go.mod pins now
 #
 # Either fails on an incompatible change, unless the upstream release the fork is based on
 # (hack/hosting-lint/budget.txt upstream_base, by its vX.Y.Z tag) has another major than the
 # tag's X: a new upstream major may change the fork's contract.
 #
+# The contract lives in one of two modules: github.com/inference-sim/blis-substrate, package
+# contracts/embed, or, up to v1.0.0-blis.2, github.com/inference-sim/blis-schemas, package embed.
+# When the tag pins the contract in another module than HEAD does, the contract check compares the
+# two packages across modules, and the fork check compares pkg/embed as the tag wrote it, with its
+# contract imports and requirement moved to HEAD's module, against pkg/embed now. The contract
+# check covers the contract itself, so the fork check reports only changes in pkg/embed.
+#
 # The first release under this rule needs no exception: when the tag has no pkg/embed (v1.0.0-blis
-# predates it) or pins no blis-schemas, there is no previous surface, every change is an
+# predates it) or pins no contract module, there is no previous surface, every change is an
 # addition, and the check passes, saying so.
 set -euo pipefail
 
 APIDIFF=golang.org/x/exp/cmd/apidiff@v0.0.0-20260908205506-85c1c2202aba
 mode=${1:?usage: embed-apidiff.sh fork|contract}
+case "$mode" in fork | contract) ;; *)
+  echo "usage: embed-apidiff.sh fork|contract" >&2
+  exit 2
+  ;;
+esac
 
 # release is the upstream release (its vX.Y.Z tag) that a commit's hack/hosting-lint/budget.txt
 # names as upstream_base, or "" when that commit records none.
@@ -91,6 +103,31 @@ compare() {
   echo "$3: no incompatible change since $prev"
 }
 
+# contract prints the module, its version and the contract's package directory in the module, for
+# the go.mod file given, or nothing when it requires neither contract module.
+contract() {
+  local mod path ver
+  mod=$(go mod edit -json "$1")
+  for path in github.com/inference-sim/blis-substrate github.com/inference-sim/blis-schemas; do
+    ver=$(jq -r --arg p "$path" '.Require[]? | select(.Path == $p) | .Version' <<<"$mod")
+    if [ -n "$ver" ]; then
+      case "$path" in
+      */blis-substrate) echo "$path $ver ./contracts/embed" ;;
+      */blis-schemas) echo "$path $ver ./embed" ;;
+      esac
+      return 0
+    fi
+  done
+}
+
+git show "$prev:go.mod" >"$work/prev.mod"
+read -r old_mod old_ver old_pkg < <(contract "$work/prev.mod" || true) || true
+read -r new_mod new_ver new_pkg < <(contract go.mod || true) || true
+if [ -z "${new_mod:-}" ]; then
+  echo "go.mod requires no embed contract module" >&2
+  exit 1
+fi
+
 case "$mode" in
 fork)
   if ! git cat-file -e "$prev:pkg/embed" 2>/dev/null; then
@@ -98,30 +135,39 @@ fork)
     exit 0
   fi
   git worktree add --detach --quiet "$work/prev" "$prev"
+  if [ -n "${old_mod:-}" ] && [ "$old_mod" != "$new_mod" ]; then
+    old_imp="$old_mod/${old_pkg#./}"
+    new_imp="$new_mod/${new_pkg#./}"
+    echo "$prev imports the contract as $old_imp; comparing its pkg/embed with that import moved to $new_imp"
+    (
+      cd "$work/prev"
+      go mod edit -droprequire "$old_mod" -require "$new_mod@$new_ver"
+      for f in pkg/embed/*.go; do
+        sed -e "s#\"$old_imp/embedtest\"#\"$new_mod/contracts/conformance/embedtest\"#" -e "s#\"$old_imp\"#\"$new_imp\"#" "$f" >"$f.moved"
+        mv "$f.moved" "$f"
+      done
+      if grep -rq "\"$old_mod" pkg/embed; then
+        echo "pkg/embed at $prev still names $old_mod after the move" >&2
+        exit 1
+      fi
+    )
+  fi
   exports "$work/prev" ./pkg/embed "$work/old"
   exports . ./pkg/embed "$work/new"
   compare "$work/old" "$work/new" pkg/embed
   ;;
 contract)
-  pin() { go mod edit -json "$1" | jq -r '.Require[]? | select(.Path == "github.com/inference-sim/blis-schemas") | .Version'; }
-  git show "$prev:go.mod" >"$work/prev.mod"
-  old=$(pin "$work/prev.mod")
-  new=$(pin go.mod)
-  if [ -z "$old" ]; then
-    echo "$prev pins no blis-schemas: the embed contract is new in this release, so every change is compatible"
+  if [ -z "${old_mod:-}" ]; then
+    echo "$prev pins no embed contract module: the contract is new in this release, so every change is compatible"
     exit 0
   fi
-  if [ "$old" = "$new" ]; then
-    echo "blis-schemas $new, as $prev pins: no change"
+  if [ "$old_mod $old_ver" = "$new_mod $new_ver" ]; then
+    echo "$new_mod $new_ver, as $prev pins: no change"
     exit 0
   fi
-  dir() { GOWORK=off GOFLAGS=-mod=mod go mod download -json "github.com/inference-sim/blis-schemas@$1" | jq -r .Dir; }
-  exports "$(dir "$old")" ./embed "$work/old"
-  exports "$(dir "$new")" ./embed "$work/new"
-  compare "$work/old" "$work/new" "blis-schemas embed ($old -> $new)"
-  ;;
-*)
-  echo "usage: embed-apidiff.sh fork|contract" >&2
-  exit 2
+  dir() { GOWORK=off GOFLAGS=-mod=mod go mod download -json "$1@$2" | jq -er .Dir; }
+  exports "$(dir "$old_mod" "$old_ver")" "$old_pkg" "$work/old"
+  exports "$(dir "$new_mod" "$new_ver")" "$new_pkg" "$work/new"
+  compare "$work/old" "$work/new" "embed contract ($old_mod $old_ver ${old_pkg#./} -> $new_mod $new_ver ${new_pkg#./})"
   ;;
 esac
