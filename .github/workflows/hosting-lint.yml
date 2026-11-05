@@ -31,6 +31,10 @@ jobs:
           go-version-file: go.mod
       - name: go.mod and go.sum are tidy
         run: go mod tidy -diff
+      # setup-go installs the go line's version; this fails unless it is contracts/toolchain, and
+      # unless the go line is no higher than it (LIF-2).
+      - name: Go toolchain is contracts/toolchain of the pinned substrate
+        run: go run ./hack/fork-policy toolchain
       # Type-checks the router packages (golang.org/x/tools/go/packages) and compares each direct
       # use against hack/hosting-lint/baseline.txt, keyed per use (file, function, kind, line text).
       - name: No new direct clock, timer, goroutine, randomness, map-order or HTTP use on router paths

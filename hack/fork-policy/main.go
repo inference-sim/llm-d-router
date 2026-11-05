@@ -30,6 +30,9 @@ limitations under the License.
 //	fork-policy landed -before <sha> -after <sha>
 //	    a push to llm-d-r: after is a merge commit whose first parent is before, plus the
 //	    history checks between them
+//	fork-policy toolchain
+//	    the go line of go.mod is no higher than contracts/toolchain of the blis-substrate version
+//	    go.mod requires, and the go command running is exactly that toolchain (LIF-2)
 //	fork-policy commits -base <sha> -head <sha> [-signatures github|git] [-repo owner/name]
 //	                    [-release-bot <email>]
 //	    the commit policy over the commits head adds to base, upstream's excepted
@@ -40,11 +43,14 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"go/version"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -74,7 +80,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: fork-policy history|landed|commits [flags]; see the package comment")
+	fmt.Fprintln(os.Stderr, "usage: fork-policy history|landed|toolchain|commits [flags]; see the package comment")
 	os.Exit(2)
 }
 
@@ -97,6 +103,11 @@ func run(dir, cmd string, args []string) ([]string, error) {
 			return nil, err
 		}
 		return landed(g, *before, *after)
+	case "toolchain":
+		if err := parse(fs, args); err != nil {
+			return nil, err
+		}
+		return toolchain(dir)
 	case "commits":
 		base := fs.String("base", "", "the tip of llm-d-r the pull request merges into")
 		head := fs.String("head", "", "the pull request's head commit")
@@ -120,7 +131,7 @@ func run(dir, cmd string, args []string) ([]string, error) {
 		}
 		return commits(g, *base, *head, v, *bot)
 	default:
-		return nil, fmt.Errorf("unknown subcommand %q: want history, landed or commits", cmd)
+		return nil, fmt.Errorf("unknown subcommand %q: want history, landed, toolchain or commits", cmd)
 	}
 }
 
@@ -194,6 +205,77 @@ func history(g git, base, head string) ([]string, error) {
 			short(head), ours, newTag, theirs))
 	}
 	return out, nil
+}
+
+// substrateModule is the module whose contracts/toolchain names the one Go toolchain of BLIS.
+const substrateModule = "github.com/inference-sim/blis-substrate"
+
+// toolchain checks the module in dir against contracts/toolchain of the blis-substrate version
+// its go.mod requires.
+func toolchain(dir string) ([]string, error) {
+	g := git{dir: dir}
+	goLine, err := goDirective(g, "HEAD")
+	if err != nil {
+		return nil, err
+	}
+	modDir, err := goOutput(dir, "list", "-m", "-f", "{{.Dir}}", substrateModule)
+	if err != nil {
+		return nil, err
+	}
+	if modDir == "" {
+		cmdOut, err := goOutput(dir, "mod", "download", "-json", substrateModule)
+		if err != nil {
+			return nil, err
+		}
+		var m struct{ Dir string }
+		if err := json.Unmarshal([]byte(cmdOut), &m); err != nil || m.Dir == "" {
+			return nil, fmt.Errorf("go mod download %s: no module directory in %q", substrateModule, cmdOut)
+		}
+		modDir = m.Dir
+	}
+	b, err := os.ReadFile(filepath.Join(modDir, "contracts", "toolchain"))
+	if err != nil {
+		return nil, fmt.Errorf("the pinned %s has no contracts/toolchain: %w", substrateModule, err)
+	}
+	running, err := goOutput(dir, "env", "GOVERSION")
+	if err != nil {
+		return nil, err
+	}
+	return compareToolchain(goLine, running, strings.TrimSpace(string(b)))
+}
+
+// compareToolchain returns the findings for a go line goLine (as go.mod writes it, 1.N.M) and a
+// running go command running (go1.N.M), against the toolchain named in contracts/toolchain.
+func compareToolchain(goLine, running, want string) ([]string, error) {
+	if !version.IsValid(want) {
+		return nil, fmt.Errorf("contracts/toolchain names %q, not a Go toolchain version go1.N.M", want)
+	}
+	if !version.IsValid("go" + goLine) {
+		return nil, fmt.Errorf("go.mod's go line %q is not a Go version", goLine)
+	}
+	var out []string
+	if version.Compare("go"+goLine, want) > 0 {
+		out = append(out, fmt.Sprintf("go.mod declares go %s, above contracts/toolchain %s: the release bot raises "+
+			"contracts/toolchain first, in the same review set (LIF-2)", goLine, want))
+	}
+	if running != want {
+		out = append(out, fmt.Sprintf("the go command is %s, not contracts/toolchain %s: install exactly that version "+
+			"and set GOTOOLCHAIN=local (LIF-2)", running, want))
+	}
+	return out, nil
+}
+
+// goOutput runs the go command in dir and returns its trimmed standard output.
+func goOutput(dir string, args ...string) (string, error) {
+	cmd := exec.Command("go", args...)
+	cmd.Dir = dir
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("go %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
+	}
+	return strings.TrimSpace(string(out)), nil
 }
 
 // goDirective returns the version on the go line of go.mod at rev.

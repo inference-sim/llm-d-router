@@ -283,6 +283,35 @@ func TestCommitsSkipsUpstreamHistory(t *testing.T) {
 	}
 }
 
+func TestCompareToolchain(t *testing.T) {
+	for _, tc := range []struct {
+		goLine, running, want string
+		findings              []string
+	}{
+		{"1.27.2", "go1.27.2", "go1.27.2", nil},
+		{"1.27.0", "go1.27.2", "go1.27.2", nil},
+		{"1.28.0", "go1.27.2", "go1.27.2", []string{"above contracts/toolchain"}},
+		{"1.27.2", "go1.27.3", "go1.27.2", []string{"the go command is go1.27.3"}},
+		{"1.28", "go1.26.10", "go1.27.2", []string{"above contracts/toolchain", "the go command is go1.26.10"}},
+	} {
+		got, err := compareToolchain(tc.goLine, tc.running, tc.want)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(got) != len(tc.findings) {
+			t.Fatalf("compareToolchain(%s, %s, %s) = %q, want %d finding(s)", tc.goLine, tc.running, tc.want, got, len(tc.findings))
+		}
+		for i, w := range tc.findings {
+			if !strings.Contains(got[i], w) {
+				t.Errorf("finding %d = %q, want it to mention %q", i, got[i], w)
+			}
+		}
+	}
+	if _, err := compareToolchain("1.27.2", "go1.27.2", "1.27.2"); err == nil {
+		t.Error("contracts/toolchain without the go prefix: want an error")
+	}
+}
+
 func TestRunRefusesMissingFlags(t *testing.T) {
 	for _, tc := range []struct {
 		cmd  string
