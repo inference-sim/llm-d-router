@@ -17,6 +17,7 @@ limitations under the License.
 package embed
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -25,6 +26,10 @@ import (
 
 	"github.com/inference-sim/blis-substrate/contracts/conformance/embedtest"
 	contract "github.com/inference-sim/blis-substrate/contracts/embed"
+
+	errcommon "github.com/llm-d/llm-d-router/pkg/common/error"
+	fwkplugin "github.com/llm-d/llm-d-router/pkg/epp/framework/interface/plugin"
+	fwksched "github.com/llm-d/llm-d-router/pkg/epp/framework/interface/scheduling"
 )
 
 // testPool is an InferencePool selecting app=vllm, with an InferenceObjective named
@@ -178,23 +183,106 @@ func renderEngines(r *http.Request) (*http.Response, error) {
 	return embedtest.Respond(r, http.StatusOK, "application/json", string(b)), nil
 }
 
-// TestConformance runs the blis-substrate embed conformance suite (contracts/conformance/embedtest) against New.
-func TestConformance(t *testing.T) {
+// unavailableType is a test-only admitter that refuses every request with ServiceUnavailable and
+// no drop reason: the one outcome the router's own plugins reach only on a path the suite cannot
+// drive (GET /v1/models before any endpoint reports), so the Unavailable part needs a plugin
+// that makes it routable.
+const unavailableType = "embed-test-unavailable-admitter"
+
+type unavailableAdmitter struct{ name string }
+
+func (a unavailableAdmitter) TypedName() fwkplugin.TypedName {
+	return fwkplugin.TypedName{Type: unavailableType, Name: a.name}
+}
+
+func (unavailableAdmitter) Admit(context.Context, *fwksched.InferenceRequest, []fwksched.Endpoint) error {
+	return errcommon.Error{Code: errcommon.ServiceUnavailable, Msg: "no serving capacity"}
+}
+
+// registerUnavailable registers the admitter and marks it audited for the test's duration.
+func registerUnavailable(t testing.TB) {
+	t.Helper()
+	fwkplugin.Register(unavailableType, fwkplugin.StabilityStable, func(name string, _ *json.Decoder, _ fwkplugin.Handle) (fwkplugin.Plugin, error) {
+		return unavailableAdmitter{name}, nil
+	})
+	audited[unavailableType] = true
+	t.Cleanup(func() {
+		delete(fwkplugin.Registry, unavailableType)
+		delete(fwkplugin.RegistryMetadata, unavailableType)
+		delete(audited, unavailableType)
+	})
+}
+
+var unavailableConfig = strings.Replace(routeConfig, "- type: queue-scorer\n", "- type: queue-scorer\n- type: "+unavailableType+"\n", 1)
+
+// conformanceSuite is the suite for a router built by newRouter. It configures every part the
+// fork relies on (Unavailable and Evict included), so none is skipped.
+func conformanceSuite(newRouter contract.Constructor) embedtest.Suite {
 	evict := poolConfig(evictConfig)
-	embedtest.Run(t, embedtest.Suite{
-		New:        New,
-		Labels:     map[string]string{"app": "vllm"},
-		Engines:    renderEngines,
-		Seed:       42,
-		Observe:    200 * 1e6, // 200 ms: several metrics scrapes at the default 50 ms interval
-		Route:      poolConfig(routeConfig),
-		Hold:       poolConfig(holdConfig),
-		KV:         poolConfig(kvConfig),
-		Evict:      &evict,
-		Refuse:     poolConfig(routeConfig),
-		RefuseType: "queue-scorer",
+	unavailable := poolConfig(unavailableConfig)
+	return embedtest.Suite{
+		New:         newRouter,
+		Labels:      map[string]string{"app": "vllm"},
+		Engines:     renderEngines,
+		Seed:        42,
+		Observe:     200 * 1e6, // 200 ms: several metrics scrapes at the default 50 ms interval
+		Route:       poolConfig(routeConfig),
+		Hold:        poolConfig(holdConfig),
+		KV:          poolConfig(kvConfig),
+		Evict:       &evict,
+		Unavailable: &unavailable,
+		Refuse:      poolConfig(routeConfig),
+		RefuseType:  "queue-scorer",
 
 		Unaudited:       "header-label-affinity-scorer",
 		UnauditedConfig: poolConfig(unauditedConfig),
+	}
+}
+
+// TestConformance runs the blis-substrate embed conformance suite (contracts/conformance/embedtest) against New.
+func TestConformance(t *testing.T) {
+	registerUnavailable(t)
+	s := conformanceSuite(New)
+	if s.Unavailable == nil || s.Evict == nil {
+		t.Fatal("the fork's conformance suite must configure Unavailable and Evict: a nil part is skipped, and BLIS relies on both")
+	}
+	embedtest.Run(t, s)
+}
+
+// misclassifying wraps a router so that every Unavailable rejection it makes is reported as
+// Unclassified, the mutation the Unavailable part exists to catch.
+type misclassifying struct{ contract.Router }
+
+func (m misclassifying) Route(ctx context.Context, req contract.Request, done func(contract.Flight, contract.Decision, *contract.Rejection)) {
+	m.Router.Route(ctx, req, func(f contract.Flight, d contract.Decision, rj *contract.Rejection) {
+		if rj != nil && rj.Kind == contract.Unavailable {
+			c := *rj
+			c.Kind = contract.Unclassified
+			rj = &c
+		}
+		done(f, d, rj)
 	})
+}
+
+// TestConformanceCatchesMisclassifiedUnavailable: the suite passes the real router and fails one
+// whose service-unavailable outcome is Unclassified, naming the unavailable part.
+func TestConformanceCatchesMisclassifiedUnavailable(t *testing.T) {
+	registerUnavailable(t)
+	if err := embedtest.Check(conformanceSuite(New)); err != nil {
+		t.Fatalf("the real router fails the suite: %v", err)
+	}
+	mutant := func(ctx context.Context, rt contract.Runtime, cfg contract.Config) (contract.Router, error) {
+		r, err := New(ctx, rt, cfg)
+		if err != nil {
+			return nil, err
+		}
+		return misclassifying{r}, nil
+	}
+	err := embedtest.Check(conformanceSuite(mutant))
+	if err == nil {
+		t.Fatal("a router that reports Unavailable as Unclassified passes the suite")
+	}
+	if !strings.Contains(err.Error(), "unavailable") {
+		t.Errorf("the suite failed, but not in its unavailable part: %v", err)
+	}
 }
