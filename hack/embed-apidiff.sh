@@ -16,13 +16,24 @@
 # embed-apidiff.sh checks that the fork's versioned surface changes only compatibly between fork
 # releases on one upstream major (fork tags are vX.Y.Z-blis.N; see pkg/embed):
 #
-#   embed-apidiff.sh fork      pkg/embed against the latest v*-blis* tag reachable from HEAD
-#   embed-apidiff.sh contract  the embed contract, between the version that tag's go.mod pins and
+#   embed-apidiff.sh [--accept-break ID] fork
+#                              pkg/embed against the latest v*-blis* tag reachable from HEAD
+#   embed-apidiff.sh [--accept-break ID] contract
+#                              the embed contract, between the version that tag's go.mod pins and
 #                              the version go.mod pins now
 #
 # Either fails on an incompatible change, unless the upstream release the fork is based on
 # (hack/hosting-lint/budget.txt upstream_base, by its vX.Y.Z tag) has another major than the
 # tag's X: a new upstream major may change the fork's contract.
+#
+# Accept-break mode (RTR-3, design 12.8). A contract-change review set may make an incompatible
+# change to the embed contract. It says so with --accept-break ID, or the ACCEPT_BREAK environment
+# variable, where ID is the tracking issue of that review set, written owner/repo#N. The script
+# then still runs apidiff and prints every incompatible change, and says that review set accepted
+# them; it exits 0 for those changes only. Any other error (an unresolvable module, an apidiff
+# failure) still fails. An empty or malformed ID is refused (exit 2), also when ACCEPT_BREAK is set
+# but empty, so the mode cannot be left on by accident: every run that uses it names the review
+# set in its output. Without the flag or variable nothing changes.
 #
 # The contract lives in one of two modules: github.com/inference-sim/blis-substrate, package
 # contracts/embed, or, up to v1.0.0-blis.2, github.com/inference-sim/blis-schemas, package embed.
@@ -37,12 +48,36 @@
 set -euo pipefail
 
 APIDIFF=golang.org/x/exp/cmd/apidiff@v0.0.0-20260908205506-85c1c2202aba
-mode=${1:?usage: embed-apidiff.sh fork|contract}
+usage="usage: embed-apidiff.sh [--accept-break owner/repo#N] fork|contract"
+accept=""
+accepting=0
+if [ "${ACCEPT_BREAK+set}" = set ]; then
+  accepting=1
+  accept=$ACCEPT_BREAK
+fi
+if [ "${1:-}" = --accept-break ]; then
+  [ $# -ge 2 ] || {
+    echo "--accept-break needs the contract-change review set's tracking issue, owner/repo#N" >&2
+    exit 2
+  }
+  accepting=1
+  accept=$2
+  shift 2
+fi
+mode=${1:-}
 case "$mode" in fork | contract) ;; *)
-  echo "usage: embed-apidiff.sh fork|contract" >&2
+  echo "$usage" >&2
   exit 2
   ;;
 esac
+[ $# -eq 1 ] || {
+  echo "$usage" >&2
+  exit 2
+}
+if [ "$accepting" = 1 ] && ! [[ "$accept" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#[1-9][0-9]*$ ]]; then
+  echo "accept-break id \"$accept\" is not the tracking issue of a contract-change review set, owner/repo#N" >&2
+  exit 2
+fi
 
 # release is the upstream release (its vX.Y.Z tag) that a commit's hack/hosting-lint/budget.txt
 # names as upstream_base, or "" when that commit records none.
@@ -92,15 +127,23 @@ exports() {
   (cd "$1" && GOWORK=off GOFLAGS=-mod=mod go run "$APIDIFF" -w "$3" "$2")
 }
 
-# compare fails on any incompatible change from old to new export data.
+# compare fails on any incompatible change from old to new export data, unless accept-break names
+# the review set that accepted them; the changes are printed either way.
 compare() {
   report=$(GOWORK=off go run "$APIDIFF" -incompatible "$1" "$2")
   if [ -n "$report" ]; then
     echo "incompatible changes in $3 since $prev:"
     echo "$report"
+    if [ "$accepting" = 1 ]; then
+      echo "ACCEPTED BREAK: the incompatible changes in $3 were accepted by contract-change review set $accept"
+      return 0
+    fi
     exit 1
   fi
   echo "$3: no incompatible change since $prev"
+  if [ "$accepting" = 1 ]; then
+    echo "note: accept-break $accept was given, but $3 has no incompatible change; drop it"
+  fi
 }
 
 # contract prints the module, its version and the contract's package directory in the module, for
@@ -165,9 +208,14 @@ contract)
     echo "$new_mod $new_ver, as $prev pins: no change"
     exit 0
   fi
-  dir() { GOWORK=off GOFLAGS=-mod=mod go mod download -json "$1@$2" | jq -er .Dir; }
-  exports "$(dir "$old_mod" "$old_ver")" "$old_pkg" "$work/old"
-  exports "$(dir "$new_mod" "$new_ver")" "$new_pkg" "$work/new"
+  dir() {
+    GOWORK=off GOFLAGS=-mod=mod go mod download -json "$1@$2" | jq -er .Dir ||
+      { echo "cannot resolve $1@$2" >&2; return 1; }
+  }
+  old_dir=$(dir "$old_mod" "$old_ver")
+  new_dir=$(dir "$new_mod" "$new_ver")
+  exports "$old_dir" "$old_pkg" "$work/old"
+  exports "$new_dir" "$new_pkg" "$work/new"
   compare "$work/old" "$work/new" "embed contract ($old_mod $old_ver ${old_pkg#./} -> $new_mod $new_ver ${new_pkg#./})"
   ;;
 esac
