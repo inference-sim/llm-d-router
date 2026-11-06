@@ -145,6 +145,8 @@ github.com/inconshreveable/mousetrap v1.1.0 h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2
 github.com/inconshreveable/mousetrap v1.1.0/go.mod h1:vpF70FUmC8bwa3OWnCshd2FqLfsEA9PFc4w1p2J65bw=
 github.com/inference-sim/blis-substrate v0.0.0-20261105035832-817e83e0018b h1:X1et+wY6Vk5epFLR7tGI7KpridkxLp57zKvqPo6fJUw=
 github.com/inference-sim/blis-substrate v0.0.0-20261105035832-817e83e0018b/go.mod h1:vZYEOia6TQOW+HZYbvJXCMDXus85dBj6vAyPr9rJF3A=
+github.com/inference-sim/blis-substrate v0.0.0-20261106163728-eaf9075617b1 h1:c/dzl6rgNFyHCQ2TZN8nD6LoKg1UT4kpJlWahQ5yHdQ=
+github.com/inference-sim/blis-substrate v0.0.0-20261106163728-eaf9075617b1/go.mod h1:vZYEOia6TQOW+HZYbvJXCMDXus85dBj6vAyPr9rJF3A=
 github.com/jellydator/ttlcache/v3 v3.4.1 h1:bOdXmXiycyK6E6Qjyuj5vl+/vU3SCOoDs8a86NbHjAQ=
 github.com/jellydator/ttlcache/v3 v3.4.1/go.mod h1:j7LO12PNghFg5+0v9budMAT4rDK4JY969jb9vOdOBBk=
 github.com/joshdk/go-junit v1.0.0 h1:S86cUKIdwBHWwA6xCmFlf3RTLfVXYQfvanM5Uh+K6GE=
