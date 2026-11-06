@@ -104,6 +104,10 @@ func eventBatch(b contract.KVBatch) (*kvevents.EventBatch, error) {
 			batch.Events = append(batch.Events, blockRemoved(e))
 		case *contract.BlockRemoved:
 			batch.Events = append(batch.Events, blockRemoved(*e))
+		case contract.AllBlocksCleared:
+			batch.Events = append(batch.Events, allBlocksCleared(e))
+		case *contract.AllBlocksCleared:
+			batch.Events = append(batch.Events, allBlocksCleared(*e))
 		default:
 			return nil, fmt.Errorf("KV event %d: unknown event type %T", i, e)
 		}
@@ -112,15 +116,36 @@ func eventBatch(b contract.KVBatch) (*kvevents.EventBatch, error) {
 }
 
 func blockStored(e contract.BlockStored) *kvevents.BlockStoredEvent {
-	out := &kvevents.BlockStoredEvent{BlockHashes: e.Hashes, ParentHash: e.Parent, BlockSize: e.BlockSize, DeviceTier: e.Tier}
+	out := &kvevents.BlockStoredEvent{
+		BlockHashes: e.Hashes, ParentHash: e.Parent, BlockSize: e.BlockSize, DeviceTier: e.Tier,
+		LoraID: e.LoRAID, ExtraKeys: e.ExtraKeys, GroupIdx: e.GroupIdx,
+		KVCacheSpecKind:              kvevents.KVCacheSpecKind(e.SpecKind),
+		KVCacheSpecSlidingWindowSize: e.SlidingWindow,
+	}
 	if len(e.Tokens) > 0 {
 		out.Tokens = e.Tokens
+	}
+	if e.LoRAName != "" {
+		name := e.LoRAName
+		out.LoraName = &name
+	}
+	if e.CacheSalt != "" && e.Parent == 0 && len(e.Hashes) > 0 && out.ExtraKeys == nil {
+		// SGLang's adapter folds the salt into the first block of a run with no parent
+		// (extra_keys layout); events with a parent inherit it through the parent's key.
+		out.ExtraKeys = make([][]any, len(e.Hashes))
+		out.ExtraKeys[0] = []any{e.CacheSalt}
 	}
 	return out
 }
 
 func blockRemoved(e contract.BlockRemoved) *kvevents.BlockRemovedEvent {
-	return &kvevents.BlockRemovedEvent{BlockHashes: e.Hashes, DeviceTier: e.Tier}
+	return &kvevents.BlockRemovedEvent{BlockHashes: e.Hashes, DeviceTier: e.Tier, GroupIdx: e.GroupIdx}
+}
+
+// allBlocksCleared carries the tier through. The pool clears every tier of the pod whatever the
+// tier, because the index cannot scope a clear (pool.go logs the wider clear).
+func allBlocksCleared(e contract.AllBlocksCleared) *kvevents.AllBlocksClearedEvent {
+	return &kvevents.AllBlocksClearedEvent{DeviceTier: e.Tier}
 }
 
 // hostRT is the hosting runtime on the router's context.

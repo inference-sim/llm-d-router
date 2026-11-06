@@ -21,7 +21,7 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/golang-lru/v2 v2.0.7
-	github.com/inference-sim/blis-substrate v0.0.0-20261105035832-817e83e0018b
+	github.com/inference-sim/blis-substrate v0.0.0-20261106163728-eaf9075617b1
 	github.com/jellydator/ttlcache/v3 v3.4.1
 	github.com/llm-d/llm-d-async/api v1.0.0
 	github.com/llm-d/llm-d-async/producer v1.0.0
