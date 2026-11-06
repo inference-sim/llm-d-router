@@ -35,7 +35,9 @@ limitations under the License.
 //	    go.mod requires, and the go command running is exactly that toolchain (LIF-2)
 //	fork-policy commits -base <sha> -head <sha> [-signatures github|git] [-repo owner/name]
 //	                    [-release-bot <email>]
-//	    the commit policy over the commits head adds to base, upstream's excepted
+//	    the commit policy over the commits head adds to base, upstream's excepted. While the
+//	    pinned blis-substrate's .github/x20-deferral.yaml holds, an unsigned commit and a missing
+//	    Signed-off-by line are printed as deferred and do not fail; see deferral.go
 //
 // Each subcommand prints one line per finding and exits 1 when there is any, 2 on a usage or git
 // error.
@@ -53,6 +55,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 )
 
 const budgetPath = "hack/hosting-lint/budget.txt"
@@ -129,7 +132,20 @@ func run(dir, cmd string, args []string) ([]string, error) {
 		default:
 			return nil, fmt.Errorf("-signatures %q: want github or git", *sigs)
 		}
-		return commits(g, *base, *head, v, *bot)
+		found, err := commits(g, *base, *head, v, *bot)
+		if err != nil {
+			return nil, err
+		}
+		// The deferral file is read from the blis-substrate commit go.mod pins (X20).
+		src, err := readDeferral(dir)
+		if err != nil {
+			return nil, err
+		}
+		fail, deferred := applyDeferral(src, time.Now().UTC(), found)
+		for _, d := range deferred {
+			fmt.Println("deferred:", d)
+		}
+		return fail, nil
 	default:
 		return nil, fmt.Errorf("unknown subcommand %q: want history, landed, toolchain or commits", cmd)
 	}
@@ -210,6 +226,27 @@ func history(g git, base, head string) ([]string, error) {
 // substrateModule is the module whose contracts/toolchain names the one Go toolchain of BLIS.
 const substrateModule = "github.com/inference-sim/blis-substrate"
 
+// substrateDir returns the directory of the blis-substrate version the module in dir requires,
+// downloading it when the module cache lacks it.
+func substrateDir(dir string) (string, error) {
+	modDir, err := goOutput(dir, "list", "-m", "-f", "{{.Dir}}", substrateModule)
+	if err != nil {
+		return "", err
+	}
+	if modDir != "" {
+		return modDir, nil
+	}
+	cmdOut, err := goOutput(dir, "mod", "download", "-json", substrateModule)
+	if err != nil {
+		return "", err
+	}
+	var m struct{ Dir string }
+	if err := json.Unmarshal([]byte(cmdOut), &m); err != nil || m.Dir == "" {
+		return "", fmt.Errorf("go mod download %s: no module directory in %q", substrateModule, cmdOut)
+	}
+	return m.Dir, nil
+}
+
 // toolchain checks the module in dir against contracts/toolchain of the blis-substrate version
 // its go.mod requires.
 func toolchain(dir string) ([]string, error) {
@@ -218,20 +255,9 @@ func toolchain(dir string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	modDir, err := goOutput(dir, "list", "-m", "-f", "{{.Dir}}", substrateModule)
+	modDir, err := substrateDir(dir)
 	if err != nil {
 		return nil, err
-	}
-	if modDir == "" {
-		cmdOut, err := goOutput(dir, "mod", "download", "-json", substrateModule)
-		if err != nil {
-			return nil, err
-		}
-		var m struct{ Dir string }
-		if err := json.Unmarshal([]byte(cmdOut), &m); err != nil || m.Dir == "" {
-			return nil, fmt.Errorf("go mod download %s: no module directory in %q", substrateModule, cmdOut)
-		}
-		modDir = m.Dir
 	}
 	b, err := os.ReadFile(filepath.Join(modDir, "contracts", "toolchain"))
 	if err != nil {
