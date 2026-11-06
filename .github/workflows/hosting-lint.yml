@@ -112,6 +112,8 @@ jobs:
         run: bash hack/embed-apidiff.sh fork
       - name: Embed contract compatible with the latest -blis tag's pin
         run: bash hack/embed-apidiff.sh contract
+      - name: Compatibility check fails on a known-bad contract change (RTR-3)
+        run: bash hack/embed-apidiff-test.sh
 
   # Every type on the fork's audited and refused lists is a type llm-d registers; a type outside
   # the audited list is refused before its constructor runs, whatever the host allows (RTR-4).
