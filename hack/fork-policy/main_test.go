@@ -90,6 +90,7 @@ func fork(t *testing.T) (r *repo, tip, v100, v110 string) {
 	r.commit("go.mod", "module github.com/llm-d/llm-d-router\n\ngo 1.28.0\n", "upstream raises go")
 	v110 = r.commit("router.go", "package router // 1.1.0\n", "upstream 1.1.0")
 	r.git("tag", "v1.1.0")
+	r.git("update-ref", "refs/remotes/upstream/main", "main") // as git fetch upstream leaves it
 	r.git("checkout", "-q", "-b", "llm-d-r", "v1.0.0")
 	r.setBase(v100, "hosting-lint: upstream_base = v1.0.0")
 	r.git("checkout", "-q", "-b", "pr1")
@@ -143,23 +144,89 @@ func TestHistoryRefusesAnUpstreamBaseNotMerged(t *testing.T) {
 	}
 }
 
-func TestHistoryRefusesAnUpstreamBaseMovedSideways(t *testing.T) {
+// Upstream cuts each release on its own release-X.Y branch, so v1.0.0 is not an ancestor of
+// v1.1.0 there. The correct merge must still pass; the old rule (old base an ancestor of the new
+// base) refused it.
+func TestHistoryAcceptsAReleaseCutOnItsOwnBranch(t *testing.T) {
+	r := newRepo(t)
+	r.commit("go.mod", "module github.com/llm-d/llm-d-router\n\ngo 1.27.2\n", "upstream go.mod")
+	r.commit("router.go", "package router // main\n", "upstream main")
+	v100 := r.commit("router.go", "package router // 1.0.0\n", "upstream 1.0.0")
+	r.git("tag", "v1.0.0")
+	r.git("checkout", "-q", "-b", "release-1.1", "main~1") // v1.1.0 is cut before v1.0.0's commit
+	v110 := r.commit("router.go", "package router // 1.1.0\n", "upstream 1.1.0")
+	r.git("tag", "v1.1.0")
+	r.git("checkout", "-q", "main")
+	r.git("update-ref", "refs/remotes/upstream/main", "main")
+	r.git("update-ref", "refs/remotes/upstream/release-1.1", "release-1.1")
+	if ok, _ := (git{dir: r.dir}).isAncestor(v100, v110); ok {
+		t.Fatal("scratch repo: v1.0.0 must not be an ancestor of v1.1.0")
+	}
+	r.git("checkout", "-q", "-b", "llm-d-r", "v1.0.0")
+	tip := r.setBase(v100, "hosting-lint: upstream_base = v1.0.0")
+	r.git("checkout", "-q", "-b", "upgrade")
+	r.git("merge", "-q", "--no-ff", "-X", "theirs", "-m", "Merge v1.1.0 into llm-d-r", "v1.1.0")
+	head := r.setBase(v110, "hosting-lint: upstream_base = v1.1.0")
+	if out := r.run("history", "-base", tip, "-head", head); len(out) != 0 {
+		t.Fatalf("a release cut on its own branch, merged: want no findings, got %q", out)
+	}
+	if out := r.run("landed", "-before", tip, "-after", head); len(out) != 1 || !strings.Contains(out[0], "parents") {
+		// landed shares the history rules: only the merge-shape finding (head is not a PR merge here).
+		t.Fatalf("landed: want only the merge-shape finding, got %q", out)
+	}
+}
+
+// The head must still contain the release the base named: a v1.0.2 that replaces v1.0.1
+// (a patch line from v1.0.0, merged without the v1.0.1 merge) is refused.
+func TestHistoryRefusesAReplacedUpstreamBase(t *testing.T) {
 	r, tip, v100, _ := fork(t)
-	// v1.0.1 is a patch release on a branch from v1.0.0; v1.0.2 does not contain it.
 	r.git("checkout", "-q", "-b", "release-1.0", v100)
 	v101 := r.commit("router.go", "package router // 1.0.1\n", "upstream 1.0.1")
 	r.git("tag", "v1.0.1")
 	r.git("checkout", "-q", "-b", "release-1.0-alt", v100)
 	v102 := r.commit("router.go", "package router // 1.0.2\n", "upstream 1.0.2 from another line")
 	r.git("tag", "v1.0.2")
+	r.git("update-ref", "refs/remotes/upstream/release-1.0", "release-1.0")
+	r.git("update-ref", "refs/remotes/upstream/release-1.0-alt", "release-1.0-alt")
 	r.git("checkout", "-q", "-b", "step1", tip)
 	r.git("merge", "-q", "--no-ff", "-m", "Merge v1.0.1", "v1.0.1")
 	mid := r.setBase(v101, "hosting-lint: upstream_base = v1.0.1")
+	r.git("checkout", "-q", "-b", "step2", tip) // from the old tip: v1.0.1 never merged
 	r.git("merge", "-q", "--no-ff", "-X", "theirs", "-m", "Merge v1.0.2", "v1.0.2")
 	head := r.setBase(v102, "hosting-lint: upstream_base = v1.0.2")
 	out := r.run("history", "-base", mid, "-head", head)
-	if len(out) != 1 || !strings.Contains(out[0], "never replaced") {
-		t.Fatalf("an upstream_base that does not contain the previous one: want one finding, got %q", out)
+	found := false
+	for _, f := range out {
+		found = found || strings.Contains(f, "never replaced")
+	}
+	if !found {
+		t.Fatalf("an upstream_base that replaces the previous one: want the never-replaced finding, got %q", out)
+	}
+}
+
+// A merge of upstream's branch that is not a release, with budget.txt and go.mod unchanged.
+func TestHistoryRefusesUpstreamContentThatIsNoRelease(t *testing.T) {
+	r, tip, _, _ := fork(t)
+	r.commit("router.go", "package router // main after 1.1.0\n", "upstream main, past v1.1.0")
+	r.git("update-ref", "refs/remotes/upstream/main", "main")
+	r.git("checkout", "-q", "-b", "sneaky", tip)
+	r.git("merge", "-q", "--no-ff", "-m", "Merge upstream main", "main")
+	head := r.git("rev-parse", "HEAD")
+	out := r.run("history", "-base", tip, "-head", head)
+	if len(out) == 0 || !strings.Contains(out[0], "belong to no release") {
+		t.Fatalf("a merge of unreleased upstream commits: want the no-release finding, got %q", out)
+	}
+}
+
+func TestHistoryNeedsUpstreamBranches(t *testing.T) {
+	r, tip, _, v110 := fork(t)
+	r.git("update-ref", "-d", "refs/remotes/upstream/main")
+	r.git("checkout", "-q", "-b", "upgrade")
+	r.git("merge", "-q", "--no-ff", "-m", "Merge v1.1.0", "v1.1.0")
+	head := r.setBase(v110, "hosting-lint: upstream_base = v1.1.0")
+	if _, err := run(r.dir, "history", []string{"-base", tip, "-head", head}); err == nil ||
+		!strings.Contains(err.Error(), "fetch upstream's branches") {
+		t.Fatalf("no upstream branches: want an error, got %v", err)
 	}
 }
 

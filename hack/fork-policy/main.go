@@ -25,8 +25,9 @@ limitations under the License.
 //
 //	fork-policy history -base <sha> -head <sha>
 //	    a pull request into llm-d-r: head contains base; head's upstream_base is a tagged
-//	    upstream release that head contains and that contains base's upstream_base; and head's
-//	    go.mod declares the go version that release declares (LIF-2)
+//	    upstream release that head contains, head still contains base's upstream_base, head holds
+//	    no upstream commit outside those two releases (upstream's branches must be fetched as
+//	    refs/remotes/upstream/*); and head's go.mod declares the go version that release declares (LIF-2)
 //	fork-policy landed -before <sha> -after <sha>
 //	    a push to llm-d-r: after is a merge commit whose first parent is before, plus the
 //	    history checks between them
@@ -202,11 +203,23 @@ func history(g git, base, head string) ([]string, error) {
 		out = append(out, fmt.Sprintf("head %s does not contain its upstream_base %s (%s): merge the release with "+
 			"git merge --no-ff %s (RTR-1)", short(head), short(newBase), newTag, newTag))
 	}
-	if ok, err := g.isAncestor(oldBase, newBase); err != nil {
+	// Upstream cuts each release on its own release branch, so a release does not contain the
+	// one before it. The rule is that the head keeps the release it had.
+	if ok, err := g.isAncestor(oldBase, head); err != nil {
 		return nil, err
 	} else if !ok {
-		out = append(out, fmt.Sprintf("upstream_base moves from %s (%s) to %s (%s), which does not contain it: "+
-			"an upstream release is merged forward, never replaced (RTR-1)", short(oldBase), oldTag, short(newBase), newTag))
+		out = append(out, fmt.Sprintf("upstream_base moves from %s (%s) to %s (%s), but head %s does not contain %s: "+
+			"an upstream release is merged forward, never replaced (RTR-1)", short(oldBase), oldTag, short(newBase), newTag,
+			short(head), short(oldBase)))
+	}
+	stray, err := strayUpstream(g, base, head, oldBase, newBase)
+	if err != nil {
+		return nil, err
+	}
+	if len(stray) > 0 {
+		out = append(out, fmt.Sprintf("head %s contains %d upstream commits that belong to no release (first %s): "+
+			"merge the tagged release upstream_base names (%s), not upstream's branch (RTR-1)",
+			short(head), len(stray), short(stray[0]), newTag))
 	}
 	ours, err := goDirective(g, head)
 	if err != nil {
@@ -221,6 +234,48 @@ func history(g git, base, head string) ([]string, error) {
 			short(head), ours, newTag, theirs))
 	}
 	return out, nil
+}
+
+// strayUpstream returns the commits head adds to base that upstream's branches hold and that
+// neither upstream_base (old or new) contains: upstream content merged outside a release. It
+// needs upstream's branches fetched as refs/remotes/upstream/* and its release tags.
+func strayUpstream(g git, base, head, oldBase, newBase string) ([]string, error) {
+	refs, err := g.lines("for-each-ref", "--format=%(refname)", "refs/remotes/upstream/")
+	if err != nil {
+		return nil, err
+	}
+	if len(refs) == 0 {
+		return nil, errors.New("no refs/remotes/upstream/* branches: fetch upstream's branches " +
+			"(git remote add upstream https://github.com/llm-d/llm-d-router.git && git fetch --no-tags upstream)")
+	}
+	tags, err := g.lines("for-each-ref", "--format=%(refname)", "refs/tags/v*")
+	if err != nil {
+		return nil, err
+	}
+	for _, t := range tags { // the fork's own vX.Y.Z-blis.N tags are not upstream's
+		if !strings.Contains(t, "-blis") {
+			refs = append(refs, t)
+		}
+	}
+	added, err := g.lines("rev-list", head, "^"+base, "^"+oldBase, "^"+newBase)
+	if err != nil || len(added) == 0 {
+		return nil, err
+	}
+	inUpstream, err := g.lines(append([]string{"rev-list"}, append(refs, "^"+oldBase, "^"+newBase)...)...)
+	if err != nil {
+		return nil, err
+	}
+	set := make(map[string]bool, len(inUpstream))
+	for _, c := range inUpstream {
+		set[c] = true
+	}
+	var stray []string
+	for _, c := range added {
+		if set[c] {
+			stray = append(stray, c)
+		}
+	}
+	return stray, nil
 }
 
 // substrateModule is the module whose contracts/toolchain names the one Go toolchain of BLIS.

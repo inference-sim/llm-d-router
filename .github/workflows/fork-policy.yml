@@ -1,6 +1,7 @@
 # History and commit rules of the inference-sim fork's llm-d-r branch (hack/fork-policy).
 #
-#   history  llm-d-r keeps its history, and llm-d releases are merged into it, never rebased (RTR-1)
+#   history  llm-d-r keeps its history, and llm-d releases are merged into it, never rebased (RTR-1);
+#            upstream's branches are fetched too, to find upstream commits that are no release
 #   commits  each commit written for BLIS is signed, signed off by a person, and names agent help
 #            in one Assisted-by line; commits of the upstream release are excepted (X20)
 #   toolchain  (in hosting-lint.yml's hosting job) the go line and the go command against
@@ -35,6 +36,7 @@ jobs:
       - name: Fetch upstream's release tags
         run: |
           git remote add upstream https://github.com/llm-d/llm-d-router.git
+          git fetch --no-tags upstream
           git fetch --no-tags upstream 'refs/tags/v*:refs/tags/v*'
           git fetch --no-tags origin "${{ github.event.pull_request.base.sha }}"
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
@@ -74,6 +76,7 @@ jobs:
       - name: Fetch upstream's release tags
         run: |
           git remote add upstream https://github.com/llm-d/llm-d-router.git
+          git fetch --no-tags upstream
           git fetch --no-tags upstream 'refs/tags/v*:refs/tags/v*'
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
