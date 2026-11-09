@@ -27,7 +27,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	contract "github.com/inference-sim/blis-schemas/embed"
+	contract "github.com/inference-sim/blis-substrate/contracts/embed"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -66,7 +66,7 @@ var embedMu sync.Mutex
 // defaultNamespace is the namespace of a pool whose flags name none.
 const defaultNamespace = "default"
 
-// Router is a router embedded through the blis-schemas embed contract. It is not safe for
+// Router is a router embedded through the blis-substrate embed contract. It is not safe for
 // concurrent use: the host calls it from one goroutine at a time (the contract's call rule).
 type Router struct {
 	ctx      context.Context // the router's lifetime; carries the hosting runtime and the logger
@@ -90,7 +90,7 @@ type Router struct {
 }
 
 // New builds a router on rt from cfg: the router's own startup path (runner.Embed) over the
-// deployment's EPP flags, EndpointPickerConfig and manifests. It is a blis-schemas
+// deployment's EPP flags, EndpointPickerConfig and manifests. It is a contracts/embed
 // embed.Constructor. Its steps, each of which may refuse the configuration:
 //
 //  1. Parse the EPP flags with the router's flag set ("EPP flags: ...") and read the

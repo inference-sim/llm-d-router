@@ -25,8 +25,8 @@ import (
 	"testing"
 	"time"
 
-	contract "github.com/inference-sim/blis-schemas/embed"
-	"github.com/inference-sim/blis-schemas/embed/embedtest"
+	"github.com/inference-sim/blis-substrate/contracts/conformance/embedtest"
+	contract "github.com/inference-sim/blis-substrate/contracts/embed"
 
 	fwkplugin "github.com/llm-d/llm-d-router/pkg/epp/framework/interface/plugin"
 )
@@ -310,5 +310,36 @@ func TestPrefixCacheAffinityFilterIsHosted(t *testing.T) {
 		"schedulingProfiles:\n- name: default\n  plugins:\n  - pluginRef: prefix-cache-affinity-filter\n  - pluginRef: token-load-scorer\n")
 	if _, err := build(t, cfg); err != nil {
 		t.Fatalf("the default-source prefix-cache-affinity-filter is refused: %v", err)
+	}
+}
+
+// TestAuditedAndRefusedTypesExist: every type the fork's audited list or refusal list names is a
+// plugin type llm-d registers, or the type a plugin built from a registered factory reports in
+// its TypedName (static-usage-limit-policy reports static-usage-limit-policy-type). A name that is
+// neither, such as one an llm-d release renamed, would leave the renamed type refused as not
+// audited while the list still claims the audit. inference-sim's
+// TestSupportedTypesAreHostedByTheFork reads the same list through New (RTR-4).
+func TestAuditedAndRefusedTypesExist(t *testing.T) {
+	r, err := build(t, poolConfig(holdConfig)) // registers the in-tree plugins and builds flow control
+	if err != nil {
+		t.Fatal(err)
+	}
+	built := map[string]bool{}
+	for _, typ := range embeddedPlugins(r.(*Router).emb.Config, r.(*Router).emb.Handle) {
+		built[typ] = true
+	}
+	exists := func(typ string) bool {
+		_, registered := fwkplugin.Registry[typ]
+		return registered || built[typ]
+	}
+	for typ := range audited {
+		if !exists(typ) {
+			t.Errorf("audited type %q is neither registered nor reported by a built plugin", typ)
+		}
+	}
+	for typ := range hostingReasons {
+		if !exists(typ) {
+			t.Errorf("refused type %q is neither registered nor reported by a built plugin", typ)
+		}
 	}
 }

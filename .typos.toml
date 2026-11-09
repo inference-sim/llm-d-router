@@ -19,6 +19,8 @@ extend-exclude = [
     "testdata/",
     # Generated CRDs; controller-gen embeds upstream Kubernetes API descriptions
     "config/crd/bases/",
+    # The fork's embedded copy of those CRDs, byte for byte
+    "pkg/embed/crds/",
     # Generated protobuf files
     "pkg/epp/framework/plugins/requesthandling/parsers/vllmgrpc/api/gen/",
 ]

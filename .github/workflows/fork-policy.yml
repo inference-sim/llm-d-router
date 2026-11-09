@@ -1,0 +1,85 @@
+# History and commit rules of the inference-sim fork's llm-d-r branch (hack/fork-policy).
+#
+#   history  llm-d-r keeps its history, and llm-d releases are merged into it, never rebased (RTR-1);
+#            upstream's branches are fetched too, to find upstream commits that are no release
+#   commits  each commit written for BLIS is signed, signed off by a person, and names agent help
+#            in one Assisted-by line; commits of the upstream release are excepted (X20)
+#   toolchain  (in hosting-lint.yml's hosting job) the go line and the go command against
+#            contracts/toolchain of the pinned blis-substrate (LIF-2)
+#   landed   on a push to llm-d-r: the pull request landed as a merge commit (RTR-1)
+#
+# The history and commits jobs are required checks on llm-d-r, by their names. The landed job
+# reports a push that broke the rule; branch protection is what prevents one.
+name: fork-policy
+
+on:
+  pull_request:
+    branches: [llm-d-r]
+  push:
+    branches: [llm-d-r]
+
+permissions:
+  contents: read
+
+env:
+  GOTOOLCHAIN: local
+
+jobs:
+  history:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Fetch upstream's release tags
+        run: |
+          git remote add upstream https://github.com/llm-d/llm-d-router.git
+          git fetch --no-tags upstream
+          git fetch --no-tags upstream 'refs/tags/v*:refs/tags/v*'
+          git fetch --no-tags origin "${{ github.event.pull_request.base.sha }}"
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+      - name: Merge, never rebase (RTR-1)
+        run: go run ./hack/fork-policy history -base "${{ github.event.pull_request.base.sha }}" -head "${{ github.event.pull_request.head.sha }}"
+
+  commits:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Fetch upstream's release tags
+        run: |
+          git remote add upstream https://github.com/llm-d/llm-d-router.git
+          git fetch --no-tags upstream 'refs/tags/v*:refs/tags/v*'
+          git fetch --no-tags origin "${{ github.event.pull_request.base.sha }}"
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+      - name: Commit policy over the commits written for BLIS (X20)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: go run ./hack/fork-policy commits -base "${{ github.event.pull_request.base.sha }}" -head "${{ github.event.pull_request.head.sha }}" -signatures github -repo "${{ github.repository }}"
+
+  landed:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - name: Fetch upstream's release tags
+        run: |
+          git remote add upstream https://github.com/llm-d/llm-d-router.git
+          git fetch --no-tags upstream
+          git fetch --no-tags upstream 'refs/tags/v*:refs/tags/v*'
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+      - name: The push is a merge commit on the previous tip (RTR-1)
+        run: go run ./hack/fork-policy landed -before "${{ github.event.before }}" -after "${{ github.event.after }}"

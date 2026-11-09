@@ -1,6 +1,7 @@
 # The inference-sim fork of llm-d-router runs the router on an injectable hosting runtime
 # (pkg/common/hosting) so BLIS can embed it in a discrete-event simulation. This workflow keeps
-# that property across rebases onto new llm-d releases.
+# that property, and the fork's versioned surface (pkg/embed.New), across merges of new llm-d
+# releases. Each job is a required check on llm-d-r, by its name.
 name: hosting-lint
 
 on:
@@ -9,21 +10,31 @@ on:
   pull_request:
     branches: [llm-d-r]
 
+permissions:
+  contents: read
+
+env:
+  # The go line in go.mod names the toolchain; no job downloads another.
+  GOTOOLCHAIN: local
+
 jobs:
   hosting:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
       - name: Fetch upstream
         run: git remote add upstream https://github.com/llm-d/llm-d-router.git && git fetch --no-tags upstream
-      # The fork's own tags (vX.Y.Z-blis.N) and upstream's release tags, for the apidiff steps.
-      - name: Fetch tags
-        run: git fetch --tags origin && git fetch --no-tags upstream 'refs/tags/v*:refs/tags/v*'
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: go.mod
+      - name: go.mod and go.sum are tidy
+        run: go mod tidy -diff
+      # setup-go installs the go line's version; this fails unless it is contracts/toolchain, and
+      # unless the go line is no higher than it (LIF-2).
+      - name: Go toolchain is contracts/toolchain of the pinned substrate
+        run: go run ./hack/fork-policy toolchain
       # Type-checks the router packages (golang.org/x/tools/go/packages) and compares each direct
       # use against hack/hosting-lint/baseline.txt, keyed per use (file, function, kind, line text).
       - name: No new direct clock, timer, goroutine, randomness, map-order or HTTP use on router paths
@@ -32,7 +43,7 @@ jobs:
       - name: Patch budget (lines changed, renamed or deleted in upstream files)
         run: go run ./hack/hosting-lint -budget
       # Every Go file the fork changes is gofmt-clean, and every file it adds is goimports-clean.
-      # Upstream files are not regrouped: that would only make each rebase conflict.
+      # Upstream files are not regrouped: that would only make each merge conflict.
       - name: Formatting of the fork's files
         run: |
           base=$(sed -n 's/^upstream_base *= *//p' hack/hosting-lint/budget.txt)
@@ -42,15 +53,78 @@ jobs:
           if [ -n "$changed" ]; then unformatted=$(gofmt -l $changed); fi
           if [ -n "$added" ]; then unformatted="$unformatted$(go run golang.org/x/tools/cmd/goimports@v0.50.0 -local github.com/llm-d/llm-d-router -l $added)"; fi
           if [ -n "$unformatted" ]; then echo "not formatted:"; echo "$unformatted"; exit 1; fi
-      # pkg/embed's tests include the blis-schemas embed conformance suite (embedtest) against New.
       - name: Seam and converted packages
-        run: go test ./pkg/common/hosting/... ./pkg/embed/... ./pkg/epp/requestcontrol/... ./pkg/epp/scheduling/... ./pkg/epp/datastore/... ./pkg/epp/datalayer/... ./pkg/epp/flowcontrol/... ./pkg/epp/framework/... ./pkg/epp/handlers/... ./cmd/epp/...
-      - name: Embed conformance (blis-schemas embedtest against pkg/embed.New)
-        run: go test ./pkg/embed/ -run TestConformance -count=1 -v
-      # The fork's versioned surface is pkg/embed.New, its implementation of the blis-schemas embed
-      # contract. Between v*-blis* tags on one upstream major both change only compatibly; the
-      # script explains the first release (a tag before pkg/embed passes).
+        run: go test ./pkg/common/hosting/... ./pkg/embed/... ./pkg/epp/requestcontrol/... ./pkg/epp/scheduling/... ./pkg/epp/datastore/... ./pkg/epp/datalayer/... ./pkg/epp/flowcontrol/... ./pkg/epp/framework/... ./pkg/epp/handlers/... ./cmd/epp/... ./hack/fork-policy/...
+
+  # golangci-lint, at the version the builder image installs, on the lines the change adds. The
+  # whole tree is not linted: upstream's own findings are upstream's to fix.
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+      - name: golangci-lint on the lines this change adds
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          version=$(sed -n 's/^ARG GOLANGCI_LINT_VERSION=//p' Dockerfile.builder)
+          if [ -z "$version" ]; then echo "Dockerfile.builder names no GOLANGCI_LINT_VERSION"; exit 1; fi
+          go run "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$version" run --config=./.golangci.yml --new-from-rev="$BASE"
+
+  # pkg/embed.New against the router conformance suite of the substrate version go.mod pins
+  # (github.com/inference-sim/blis-substrate/contracts/conformance/embedtest), RTR-3.
+  conformance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+      - name: Embed conformance (contracts/conformance/embedtest against pkg/embed.New)
+        run: go test ./pkg/embed/ -run 'TestConformance$' -count=1 -v
+      - name: The fork imports only blis-substrate's contracts/ packages (X7)
+        run: go test ./pkg/embed/ -run 'TestImportsOnlySubstrateContracts$' -count=1 -v
+
+  # The fork's versioned surface is pkg/embed.New, its implementation of the embed contract.
+  # Between v*-blis* tags on one upstream major both change only compatibly (RTR-3); the script
+  # explains the first release (a tag before pkg/embed passes) and a move of the contract between
+  # modules.
+  api-diff:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      # The fork's own tags (vX.Y.Z-blis.N) and upstream's release tags.
+      - name: Fetch tags
+        run: |
+          git remote add upstream https://github.com/llm-d/llm-d-router.git
+          git fetch --tags origin
+          git fetch --no-tags upstream 'refs/tags/v*:refs/tags/v*'
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
       - name: pkg/embed API compatible with the latest -blis tag
         run: bash hack/embed-apidiff.sh fork
-      - name: blis-schemas embed contract compatible with the latest -blis tag's pin
+      - name: Embed contract compatible with the latest -blis tag's pin
         run: bash hack/embed-apidiff.sh contract
+      - name: Compatibility check fails on a known-bad contract change (RTR-3)
+        run: bash hack/embed-apidiff-test.sh
+
+  # Every type on the fork's audited and refused lists is a type llm-d registers; a type outside
+  # the audited list is refused before its constructor runs, whatever the host allows (RTR-4).
+  # inference-sim's TestSupportedTypesAreHostedByTheFork holds BLIS's allow-list within the
+  # audited list.
+  plugin-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+      - name: Audited plugin list
+        run: go test ./pkg/embed/ -run 'TestAuditedAndRefusedTypesExist$|TestRefusalPrecedence$|TestUnsupportedPlugin|TestFactoriesRestored$' -count=1 -v
