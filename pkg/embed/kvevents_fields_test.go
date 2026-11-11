@@ -100,23 +100,57 @@ func TestEventBatchRefusesASaltWithExtraKeys(t *testing.T) {
 	}
 }
 
-// TestEventBatchRefusesALoRANameItCannotAttribute: llm-d's vLLM adapter reads lora_name and its
-// SGLang adapter does not, and the batch does not say the engine. A name beside an id and no
-// field only vLLM emits could be either's, so it is refused; the parity test pins the rest.
-func TestEventBatchRefusesALoRANameItCannotAttribute(t *testing.T) {
+// TestEventBatchReadsTheLoRANameByEngine: llm-d's vLLM adapter reads lora_name, and the pool takes
+// it as the model of the blocks; its SGLang adapter reads lora_id only. A name is carried for
+// vLLM (named or unset) and dropped for SGLang, with or without a lora_id; the id is carried for
+// both.
+func TestEventBatchReadsTheLoRANameByEngine(t *testing.T) {
 	id, g := 7, 0
-	_, err := eventBatch(contract.KVBatch{Events: []contract.KVEvent{
-		contract.BlockStored{Hashes: []uint64{1}, BlockSize: 16, LoRAID: &id, LoRAName: "ad"}}})
-	if err == nil || !strings.Contains(err.Error(), "lora_name") {
-		t.Errorf("a name beside an id, no vLLM-only field: want a refusal, got %v", err)
-	}
-	for name, ev := range map[string]contract.BlockStored{
-		"name with a vLLM-only field": {Hashes: []uint64{1}, BlockSize: 16, LoRAID: &id, LoRAName: "ad", GroupIdx: &g},
-		"name alone (vLLM)":           {Hashes: []uint64{1}, BlockSize: 16, LoRAName: "ad"},
-		"id alone":                    {Hashes: []uint64{1}, BlockSize: 16, LoRAID: &id},
+	for _, tc := range []struct {
+		engine   string
+		ev       contract.BlockStored
+		wantName bool
+	}{
+		{"", contract.BlockStored{LoRAID: &id, LoRAName: "ad"}, true},
+		{contract.EngineVLLM, contract.BlockStored{LoRAID: &id, LoRAName: "ad"}, true},
+		{contract.EngineVLLM, contract.BlockStored{LoRAName: "ad"}, true},
+		{contract.EngineVLLM, contract.BlockStored{LoRAID: &id, LoRAName: "ad", GroupIdx: &g}, true},
+		{contract.EngineSGLang, contract.BlockStored{LoRAID: &id, LoRAName: "ad"}, false},
+		{contract.EngineSGLang, contract.BlockStored{LoRAName: "ad"}, false},
+		{contract.EngineSGLang, contract.BlockStored{LoRAID: &id}, false},
 	} {
-		if _, err := eventBatch(contract.KVBatch{Events: []contract.KVEvent{ev}}); err != nil {
-			t.Errorf("%s: want it accepted, got %v", name, err)
+		tc.ev.Hashes, tc.ev.BlockSize = []uint64{1}, 16
+		got, err := eventBatch(contract.KVBatch{Engine: tc.engine, Events: []contract.KVEvent{tc.ev}})
+		if err != nil {
+			t.Errorf("engine %q %+v: want it accepted, got %v", tc.engine, tc.ev, err)
+			continue
+		}
+		s := got.Events[0].(*kvevents.BlockStoredEvent)
+		if (s.LoraName != nil) != tc.wantName || (s.LoraName != nil && *s.LoraName != "ad") {
+			t.Errorf("engine %q name %q: LoraName = %v, want carried = %v", tc.engine, tc.ev.LoRAName, s.LoraName, tc.wantName)
+		}
+		if !reflect.DeepEqual(s.LoraID, tc.ev.LoRAID) {
+			t.Errorf("engine %q: LoraID = %v, want %v", tc.engine, s.LoraID, tc.ev.LoRAID)
+		}
+	}
+}
+
+// TestEventBatchRefusesAnEngineTheContractDoesNotDefine: a batch is decoded as its engine's
+// adapter decodes it, so a kind with no adapter is refused, not read as vLLM's. The refusal
+// holds for a batch with no events and for events that are otherwise valid; "" is vLLM's.
+func TestEventBatchRefusesAnEngineTheContractDoesNotDefine(t *testing.T) {
+	ev := []contract.KVEvent{contract.BlockStored{Hashes: []uint64{1}, BlockSize: 16}}
+	for _, kind := range []string{"tensorrt", "VLLM", "SGLang", " vllm"} {
+		for name, events := range map[string][]contract.KVEvent{"valid events": ev, "no events": nil} {
+			_, err := eventBatch(contract.KVBatch{Engine: kind, Events: events})
+			if err == nil || !strings.Contains(err.Error(), kind) || !strings.Contains(err.Error(), "does not define") {
+				t.Errorf("engine %q, %s: want a refusal naming the kind, got %v", kind, name, err)
+			}
+		}
+	}
+	for _, kind := range []string{"", contract.EngineVLLM, contract.EngineSGLang} {
+		if _, err := eventBatch(contract.KVBatch{Engine: kind, Events: ev}); err != nil {
+			t.Errorf("engine %q: want it accepted, got %v", kind, err)
 		}
 	}
 }
