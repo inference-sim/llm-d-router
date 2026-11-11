@@ -46,7 +46,13 @@ func adapterEvents(t *testing.T, a kvevents.EngineAdapter, events ...any) []kvev
 
 func embedEvents(t *testing.T, events ...contract.KVEvent) []kvevents.GenericEvent {
 	t.Helper()
-	b, err := eventBatch(contract.KVBatch{Events: events})
+	return embedEventsFrom(t, "", events...)
+}
+
+// embedEventsFrom is embedEvents for a batch that names its engine.
+func embedEventsFrom(t *testing.T, engine string, events ...contract.KVEvent) []kvevents.GenericEvent {
+	t.Helper()
+	b, err := eventBatch(contract.KVBatch{Engine: engine, Events: events})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +88,7 @@ func TestEventBatchMatchesLLMDAdapters(t *testing.T) {
 
 	t.Run("vLLM full BlockStored: lora id and name, extra keys, group, sliding window", func(t *testing.T) {
 		keys := [][]any{{"ad", "mm"}, nil}
-		got := embedEvents(t, contract.BlockStored{Hashes: []uint64{1, 2}, Parent: 9, Tokens: []uint32{1, 2, 3, 4},
+		got := embedEventsFrom(t, contract.EngineVLLM, contract.BlockStored{Hashes: []uint64{1, 2}, Parent: 9, Tokens: []uint32{1, 2, 3, 4},
 			BlockSize: 2, Tier: "cpu", LoRAID: &id, LoRAName: "ad", ExtraKeys: keys, GroupIdx: &group,
 			SpecKind: contract.SpecSlidingWindow, SlidingWindow: &window})
 		want := adapterEvents(t, vllm, []any{"BlockStored", []any{uint64(1), uint64(2)}, uint64(9),
@@ -117,17 +123,13 @@ func TestEventBatchMatchesLLMDAdapters(t *testing.T) {
 		// SGLang's lora_name is in the map form's payload; llm-d's adapter never reads it.
 		want := adapterEvents(t, sglang, map[string]any{"type": "BlockStored", "block_hashes": []any{uint64(1)},
 			"token_ids": []uint32{1, 2}, "block_size": 2, "lora_id": seven, "lora_name": "ad"})
-		// The contract's batch does not say the engine, so a name with an id and no vLLM-only field
-		// is refused, not guessed: the nearest accepted batch is the id alone, which equals llm-d's.
-		if _, err := eventBatch(contract.KVBatch{Events: []contract.KVEvent{
-			contract.BlockStored{Hashes: []uint64{1}, Tokens: []uint32{1, 2}, BlockSize: 2, LoRAID: &seven, LoRAName: "ad"}}}); err == nil {
-			t.Error("lora_name with lora_id and no vLLM-only field: want a refusal")
-		}
-		got := embedEvents(t, contract.BlockStored{Hashes: []uint64{1}, Tokens: []uint32{1, 2}, BlockSize: 2, LoRAID: &seven})
+		got := embedEventsFrom(t, contract.EngineSGLang,
+			contract.BlockStored{Hashes: []uint64{1}, Tokens: []uint32{1, 2}, BlockSize: 2, LoRAID: &seven, LoRAName: "ad"})
 		requireSame(t, got, want)
 	})
 	t.Run("SGLang cache salt on the first block of a run with no parent", func(t *testing.T) {
-		got := embedEvents(t, contract.BlockStored{Hashes: []uint64{2, 3}, Tokens: []uint32{1, 2, 3, 4}, BlockSize: 2, CacheSalt: "s"},
+		got := embedEventsFrom(t, contract.EngineSGLang,
+			contract.BlockStored{Hashes: []uint64{2, 3}, Tokens: []uint32{1, 2, 3, 4}, BlockSize: 2, CacheSalt: "s"},
 			contract.BlockStored{Hashes: []uint64{4}, Parent: 3, Tokens: []uint32{5, 6}, BlockSize: 2, CacheSalt: "s"})
 		want := adapterEvents(t, sglang,
 			map[string]any{"type": "BlockStored", "block_hashes": []any{uint64(2), uint64(3)}, "token_ids": []uint32{1, 2, 3, 4},
@@ -137,7 +139,7 @@ func TestEventBatchMatchesLLMDAdapters(t *testing.T) {
 		requireSame(t, got, want)
 	})
 	t.Run("SGLang BlockRemoved and AllBlocksCleared", func(t *testing.T) {
-		got := embedEvents(t, contract.BlockRemoved{Hashes: []uint64{1}, Tier: "cpu"}, contract.AllBlocksCleared{})
+		got := embedEventsFrom(t, contract.EngineSGLang, contract.BlockRemoved{Hashes: []uint64{1}, Tier: "cpu"}, contract.AllBlocksCleared{})
 		want := adapterEvents(t, sglang, []any{"BlockRemoved", []any{uint64(1)}, "cpu"}, []any{"AllBlocksCleared"})
 		requireSame(t, got, want)
 	})

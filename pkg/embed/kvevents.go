@@ -91,10 +91,16 @@ func (r *Router) KVBlocks(endpoint, tier string) (map[uint64]bool, error) {
 	return r.kvIngest[0].HostedPodTierBlocks(endpoint, tier)
 }
 
-// eventBatch is b in vLLM's event-batch form, each event as llm-d's own engine adapters decode
-// the engine's message (engineadapter.VLLMAdapter, engineadapter.SGLangAdapter). The parity
-// test pins that.
+// eventBatch is b in vLLM's event-batch form, each event as llm-d's own engine adapter for the
+// batch's engine decodes the engine's message (engineadapter.VLLMAdapter,
+// engineadapter.SGLangAdapter). The parity test pins that. A batch naming an engine kind the
+// contract does not define is refused.
 func eventBatch(b contract.KVBatch) (*kvevents.EventBatch, error) {
+	if !b.Known() {
+		return nil, fmt.Errorf("KV batch names engine %q, which the contract does not define (%s, %s)",
+			b.Engine, contract.EngineVLLM, contract.EngineSGLang)
+	}
+	engine := b.EngineOf()
 	batch := &kvevents.EventBatch{Timestamp: float64(b.Timestamp.UnixNano()) / 1e9}
 	for i, e := range b.Events {
 		var (
@@ -103,9 +109,9 @@ func eventBatch(b contract.KVBatch) (*kvevents.EventBatch, error) {
 		)
 		switch e := e.(type) {
 		case contract.BlockStored:
-			ev, err = blockStored(e)
+			ev, err = blockStored(e, engine)
 		case *contract.BlockStored:
-			ev, err = blockStored(*e)
+			ev, err = blockStored(*e, engine)
 		case contract.BlockRemoved:
 			ev, err = blockRemoved(e)
 		case *contract.BlockRemoved:
@@ -134,13 +140,7 @@ func checkGroup(g *int) error {
 	return nil
 }
 
-// vllmOnly reports whether the event carries a field only vLLM emits (the contract's field
-// comments name the engine of each).
-func vllmOnly(e contract.BlockStored) bool {
-	return e.ExtraKeys != nil || e.GroupIdx != nil || e.SpecKind != "" || e.SlidingWindow != nil
-}
-
-func blockStored(e contract.BlockStored) (*kvevents.BlockStoredEvent, error) {
+func blockStored(e contract.BlockStored, engine string) (*kvevents.BlockStoredEvent, error) {
 	if err := checkGroup(e.GroupIdx); err != nil {
 		return nil, err
 	}
@@ -157,18 +157,9 @@ func blockStored(e contract.BlockStored) (*kvevents.BlockStoredEvent, error) {
 	if len(e.Tokens) > 0 {
 		out.Tokens = e.Tokens
 	}
-	// llm-d's vLLM adapter reads lora_name; its SGLang adapter does not (it reads lora_id only),
-	// and the pool takes the name as the model of the blocks. KVBatch does not say which engine
-	// published it, so the engine is read from the fields: a name with fields only vLLM emits,
-	// or with no lora_id (SGLang always sends the id), is vLLM's and kept; a name with a lora_id
-	// and nothing of vLLM's is either engine's and is refused rather than guessed. The contract
-	// needs a KVBatch.Engine to end the refusal.
-	if e.LoRAName != "" {
-		if e.LoRAID != nil && !vllmOnly(e) {
-			return nil, errors.New("lora_name with a lora_id and no field only vLLM emits: the batch does not say " +
-				"whether vLLM (which indexes the blocks under the name) or SGLang (whose name llm-d ignores) " +
-				"published it")
-		}
+	// llm-d's vLLM adapter reads lora_name and the pool takes it as the model of the blocks; its
+	// SGLang adapter reads lora_id only, so SGLang's name is not carried.
+	if e.LoRAName != "" && engine == contract.EngineVLLM {
 		name := e.LoRAName
 		out.LoraName = &name
 	}
