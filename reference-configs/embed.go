@@ -26,5 +26,5 @@ import "embed"
 
 // FS holds policies.json and every reference configuration file.
 //
-//go:embed *.yaml policies.json
+//go:embed *.yaml guides/*.yaml policies.json
 var FS embed.FS
