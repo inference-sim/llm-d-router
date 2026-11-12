@@ -57,12 +57,18 @@ type refPool struct {
 // empty). queue gives the waiting-queue length an endpoint reports, by IP.
 func newRefPool(t *testing.T, cfg string, prefill, decode, plain int, queue map[string]int) *refPool {
 	t.Helper()
+	return newRefPoolWithFlags(t, defaultFlags, cfg, prefill, decode, plain, queue)
+}
+
+// newRefPoolWithFlags is newRefPool with the EPP flags the file under test needs.
+func newRefPoolWithFlags(t *testing.T, flags []string, cfg string, prefill, decode, plain int, queue map[string]int) *refPool {
+	t.Helper()
 	rt := embedtest.NewRuntime(1)
 	rt.Engines = func(r *http.Request) (*http.Response, error) {
 		body := fmt.Sprintf("# TYPE vllm:num_requests_waiting gauge\nvllm:num_requests_waiting{model_name=\"m\"} %d\n", queue[r.URL.Hostname()])
 		return embedtest.Respond(r, http.StatusOK, "text/plain", body), nil
 	}
-	r, err := New(context.Background(), rt, contract.Config{Flags: defaultFlags, Config: []byte(cfg)})
+	r, err := New(context.Background(), rt, contract.Config{Flags: flags, Config: []byte(cfg)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,6 +100,16 @@ func newRefPool(t *testing.T, cfg string, prefill, decode, plain int, queue map[
 // Unless hold is set the request completes at once, so the router counts it no longer in flight.
 func (p *refPool) route(prompt []int, hold bool) (contract.Decision, contract.Flight) {
 	p.t.Helper()
+	d, fl, rej := p.tryRoute(prompt, hold)
+	if rej != nil {
+		p.t.Fatalf("request %d: rejection=%+v", p.n, rej)
+	}
+	return d, fl
+}
+
+// tryRoute is route that returns the rejection instead of failing on it.
+func (p *refPool) tryRoute(prompt []int, hold bool) (contract.Decision, contract.Flight, *contract.Rejection) {
+	p.t.Helper()
 	p.n++
 	body, _ := json.Marshal(map[string]any{"model": "m", "prompt": prompt, "max_tokens": 4})
 	var d contract.Decision
@@ -106,14 +122,14 @@ func (p *refPool) route(prompt []int, hold bool) (contract.Decision, contract.Fl
 		})
 	p.rt.Settle()
 	p.rt.Advance(0)
-	if !decided || rej != nil {
-		p.t.Fatalf("request %d: decided=%v rejection=%+v", p.n, decided, rej)
+	if !decided {
+		p.t.Fatalf("request %d was never decided", p.n)
 	}
-	if !hold {
+	if rej == nil && !hold {
 		fl.ResponseBody([]byte(`{}`), true)
 		p.rt.Settle()
 	}
-	return d, fl
+	return d, fl, rej
 }
 
 var shortPrompt = []int{1, 2, 3}
