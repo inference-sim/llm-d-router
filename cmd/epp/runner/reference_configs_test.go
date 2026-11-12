@@ -58,6 +58,10 @@ type refKnob struct {
 	RouterDefault any    `json:"router_default"`
 	HostedEffect  *bool  `json:"hosted_effect"`
 	Reason        string `json:"reason"`
+	Requires      []struct {
+		ID    string `json:"id"`
+		Value any    `json:"value"`
+	} `json:"requires"`
 }
 
 // refIndex is the part of reference-configs/policies.json these tests read.
@@ -346,6 +350,13 @@ func TestIndexSeparatesEffectiveFromIneffectiveParameters(t *testing.T) {
 			require.NotNil(t, k.HostedEffect, "%s/%s has no hosted_effect", p.Name, k.ID)
 			require.True(t, *k.HostedEffect, "%s/%s is listed as a knob but is marked ineffective", p.Name, k.ID)
 			require.NotEqual(t, "plugin_choice", k.Kind, "%s/%s: a choice that needs more than one edit is not a knob", p.Name, k.ID)
+			for _, r := range k.Requires {
+				found := false
+				for _, other := range p.Knobs {
+					found = found || other.ID == r.ID
+				}
+				require.True(t, found, "%s/%s requires %s, which is not a knob of the policy", p.Name, k.ID, r.ID)
+			}
 		}
 		for _, k := range p.IneffectiveParameters {
 			require.NotNil(t, k.HostedEffect, "%s/%s has no hosted_effect", p.Name, k.ID)

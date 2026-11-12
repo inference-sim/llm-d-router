@@ -103,17 +103,22 @@ Each policy in `policies.json` has three lists.
   stub engines whose queue, KV usage and cache block size the test sets, and fails when the two
   settings decide alike. A few knobs say when they act (`effective_when`): `matchLengthScaleTokens`
   only while `matchLengthWeight` is above 0; `maxBusyScore` only at 0 in a file whose one scorer is
-  the active-request scorer (any other value scales scores and keeps their order).
+  the active-request scorer (any other value scales scores and keeps their order). A knob that is
+  read only under another setting carries `requires`, a list of `{id, value}` settings of other
+  knobs of the policy: `approx-prefix-cache-producer.maxPrefixBlocksToMatch` requires
+  `approx-prefix-cache-producer.maxPrefixTokensToMatch` = 0, because the producer reads the block
+  cap only when the token cap is 0 (`resolveMaxBlocks`). A sweep of it sets both. The hosted test
+  moves it with the requirement set, and `TestConditionalKnobIsInertWhenItsConditionFails` shows
+  it changes nothing without it.
 - `ineffective_parameters`: parameters the router accepts that cannot change a hosted decision,
   each with `hosted_effect: false` and a `reason`. A search must not sweep them.
   `TestIneffectiveParametersLeaveTheDecisionAlone` sets each one and shows the decisions do not
   move. They are `picker.maxNumOfEndpoints` (the hosted boundary keeps the first endpoint, in
   `pkg/embed/route.go`; the embed contract carries one endpoint per decision, so only the value 1
   is modelled), `inflight-load-producer.addEstimatedOutputTokens` (the active-request scorer reads
-  request counts, not tokens), `prefix-based-pd-decider.prefixMatchInfoProducerName` (it names the
-  one producer the file declares; any other name fails to load) and
-  `approx-prefix-cache-producer.maxPrefixBlocksToMatch` (read only when `maxPrefixTokensToMatch` is
-  0, and it is not).
+  request counts, not tokens) and `prefix-based-pd-decider.prefixMatchInfoProducerName` (it names
+  the one producer the file declares; any other name fails to load). A parameter that acts under a
+  condition is not on this list; it is a knob with `requires`.
 - `pd_decider`, on the P/D files of `round-robin`, `random-picker` and `least-active-requests`: the
   decider is not a knob. Swapping `always-disagg-pd-decider` for `prefix-based-pd-decider` takes the
   producer, a prefix scorer in both profiles and a `nonCachedTokens` above 0, and replacing the

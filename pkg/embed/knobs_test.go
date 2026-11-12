@@ -46,6 +46,20 @@ type indexKnob struct {
 	Parameter string `json:"parameter"`
 	Profile   string `json:"profile"`
 	AppliesTo string `json:"applies_to"`
+	// Requires lists settings of other knobs of the policy that must hold for this knob to be read.
+	Requires []indexRequirement `json:"requires"`
+}
+
+// indexRequirement is "<plugin>.<parameter> = value", as the index writes a condition.
+type indexRequirement struct {
+	ID    string `json:"id"`
+	Value any    `json:"value"`
+}
+
+// apply sets the required parameter in doc.
+func (r indexRequirement) apply(doc map[string]any) {
+	plugin, parameter, _ := strings.Cut(r.ID, ".")
+	setParam(doc, plugin, parameter, r.Value)
 }
 
 type indexPolicy struct {
@@ -474,6 +488,7 @@ var knobTests = map[string]knobTest{
 	"prefix-cache-scorer.matchLengthScaleTokens": {variant{"1000000", all(param(prefixScorer, "matchLengthWeight", 1.0), param(prefixScorer, "matchLengthScaleTokens", 1000000))},
 		variant{"256", all(param(prefixScorer, "matchLengthWeight", 1.0), param(prefixScorer, "matchLengthScaleTokens", 256))}, holderScenario(queryLong)},
 	"approx-prefix-cache-producer.maxPrefixTokensToMatch": {variant{"131072", param(approx, "maxPrefixTokensToMatch", 131072)}, variant{"64", param(approx, "maxPrefixTokensToMatch", 64)}, holderScenario(queryOneBlock)},
+	"approx-prefix-cache-producer.maxPrefixBlocksToMatch": {variant{"2048", param(approx, "maxPrefixBlocksToMatch", 2048)}, variant{"1", param(approx, "maxPrefixBlocksToMatch", 1)}, holderScenario(queryOneBlock)},
 	"approx-prefix-cache-producer.lruCapacityPerServer":   {variant{"31250", param(approx, "lruCapacityPerServer", 31250)}, variant{"1", param(approx, "lruCapacityPerServer", 1)}, holderScenario(queryRepeat)},
 	"approx-prefix-cache-producer.blockSizeTokens":        {variant{"64", param(approx, "blockSizeTokens", 64)}, variant{"256", param(approx, "blockSizeTokens", 256)}, partialScenario(nil)},
 	"approx-prefix-cache-producer.autoTune": {variant{"false", all(param(approx, "autoTune", false), param(approx, "blockSizeTokens", 64))}, variant{"true", param(approx, "autoTune", true)},
@@ -495,7 +510,12 @@ func TestKnobMovesAHostedDecision(t *testing.T) {
 					}
 					text := refConfig(t, file)
 					run := func(v variant) string {
-						cfg := edit(t, text, func(doc map[string]any) { v.set(t, doc) })
+						cfg := edit(t, text, func(doc map[string]any) {
+							for _, r := range k.Requires {
+								r.apply(doc) // the condition under which the knob is read
+							}
+							v.set(t, doc)
+						})
 						var roles []string
 						if k.Profile != "" {
 							roles = []string{k.Profile}
@@ -542,7 +562,6 @@ var ineffectiveTests = map[string]ineffectiveTest{
 	}, queueScenario},
 	"inflight-load-producer.addEstimatedOutputTokens":     {param("inflight-load-producer", "addEstimatedOutputTokens", true), heldScenario(longPrompt(3, 4000))},
 	"prefix-based-pd-decider.prefixMatchInfoProducerName": {param("prefix-based-pd-decider", "prefixMatchInfoProducerName", approx), followScenario},
-	"approx-prefix-cache-producer.maxPrefixBlocksToMatch": {param(approx, "maxPrefixBlocksToMatch", 1), holderScenario(queryOneBlock)},
 }
 
 // TestIneffectiveParametersLeaveTheDecisionAlone: a parameter the index lists as ineffective can
@@ -564,6 +583,70 @@ func TestIneffectiveParametersLeaveTheDecisionAlone(t *testing.T) {
 						t.Errorf("%s changed the decisions:\n without: %s\n with:    %s", k.ID, without, with)
 					}
 				})
+			}
+		}
+	}
+}
+
+// TestConditionalKnobIsInertWhenItsConditionFails: a knob that names a condition (requires) is
+// read only while the condition holds. Set without it, in the file as shipped, it leaves every
+// decision alone; with it, TestKnobMovesAHostedDecision shows it moves them. Together the two
+// say the knob is conditional, not ineffective.
+func TestConditionalKnobIsInertWhenItsConditionFails(t *testing.T) {
+	found := 0
+	for _, pol := range readPolicies(t) {
+		for _, k := range pol.Knobs {
+			if len(k.Requires) == 0 {
+				continue
+			}
+			found++
+			kt := knobTests[k.ID]
+			for shape, file := range pol.shapes(k) {
+				t.Run(pol.Name+"/"+shape+"/"+k.ID, func(t *testing.T) {
+					text := refConfig(t, file)
+					a := kt.watch(t, edit(t, text, func(doc map[string]any) { kt.a.set(t, doc) }), shape == "pd", nil)
+					b := kt.watch(t, edit(t, text, func(doc map[string]any) { kt.b.set(t, doc) }), shape == "pd", nil)
+					if a != b {
+						t.Errorf("%s moved the decisions without %v: %s | %s", k.ID, k.Requires, a, b)
+					}
+				})
+			}
+		}
+	}
+	if found == 0 {
+		t.Fatal("the index lists no conditional knob; maxPrefixBlocksToMatch is one")
+	}
+}
+
+// TestMaxPrefixBlocksToMatchIsConditionalNotIneffective: the producer reads maxPrefixBlocksToMatch
+// whenever maxPrefixTokensToMatch is 0, so a hosted decision moves with it there. The index must
+// not call it ineffective; it lists it as a knob that requires the token cap to be 0.
+func TestMaxPrefixBlocksToMatchIsConditionalNotIneffective(t *testing.T) {
+	const id = "approx-prefix-cache-producer.maxPrefixBlocksToMatch"
+	const tokens = "approx-prefix-cache-producer.maxPrefixTokensToMatch"
+	text := refConfig(t, "default.yaml")
+	at := func(blocks int) string {
+		cfg := edit(t, text, func(doc map[string]any) {
+			setParam(doc, approx, "maxPrefixTokensToMatch", 0)
+			setParam(doc, approx, "maxPrefixBlocksToMatch", blocks)
+		})
+		return holderScenario(queryOneBlock)(t, cfg, false, nil)
+	}
+	if a, b := at(2048), at(1); a == b {
+		t.Fatalf("with the token cap at 0, 2048 and 1 blocks decide alike (%s); the premise of the test fails", a)
+	}
+	for _, pol := range readPolicies(t) {
+		for _, k := range pol.IneffectiveParameters {
+			if k.ID == id {
+				t.Errorf("%s lists %s as ineffective, but it moves a hosted decision when %s is 0", pol.Name, id, tokens)
+			}
+		}
+		for _, k := range pol.Knobs {
+			if k.ID != id {
+				continue
+			}
+			if len(k.Requires) != 1 || k.Requires[0].ID != tokens || k.Requires[0].Value != float64(0) {
+				t.Errorf("%s lists %s without the requirement %s = 0: %v", pol.Name, id, tokens, k.Requires)
 			}
 		}
 	}
