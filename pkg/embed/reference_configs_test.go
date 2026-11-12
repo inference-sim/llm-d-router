@@ -47,10 +47,11 @@ func refConfig(t *testing.T, name string) string {
 // refPool is a hosted router with endpoints: prefill pods 10.0.1.n and decode pods 10.0.2.n
 // carry the role label, plain pods 10.0.3.n carry none.
 type refPool struct {
-	t  *testing.T
-	rt *embedtest.Runtime
-	r  contract.Router
-	n  int
+	t     *testing.T
+	rt    *embedtest.Runtime
+	r     contract.Router
+	n     int
+	model string // the request's model; "m" when empty
 }
 
 // newRefPool starts a router with the configuration cfg (the router's built-in default when
@@ -111,7 +112,11 @@ func (p *refPool) route(prompt []int, hold bool) (contract.Decision, contract.Fl
 func (p *refPool) tryRoute(prompt []int, hold bool) (contract.Decision, contract.Flight, *contract.Rejection) {
 	p.t.Helper()
 	p.n++
-	body, _ := json.Marshal(map[string]any{"model": "m", "prompt": prompt, "max_tokens": 4})
+	model := "m"
+	if p.model != "" {
+		model = p.model
+	}
+	body, _ := json.Marshal(map[string]any{"model": model, "prompt": prompt, "max_tokens": 4})
 	var d contract.Decision
 	var fl contract.Flight
 	var rej *contract.Rejection
