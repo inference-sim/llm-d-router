@@ -44,6 +44,22 @@ import (
 // referenceConfigs is the directory of reference configurations (see its README.md).
 const referenceConfigs = "../../../reference-configs"
 
+// refKnob is one parameter the index lists, swept (knobs) or accepted but without effect on a
+// hosted decision (ineffective_parameters).
+type refKnob struct {
+	ID            string `json:"id"`
+	Kind          string `json:"kind"`
+	Plugin        string `json:"plugin"`
+	Parameter     string `json:"parameter"`
+	Profile       string `json:"profile"`
+	AppliesTo     string `json:"applies_to"`
+	InFile        bool   `json:"in_file"`
+	FileValue     any    `json:"file_value"`
+	RouterDefault any    `json:"router_default"`
+	HostedEffect  *bool  `json:"hosted_effect"`
+	Reason        string `json:"reason"`
+}
+
 // refIndex is the part of reference-configs/policies.json these tests read.
 type refIndex struct {
 	Policies []struct {
@@ -52,17 +68,12 @@ type refIndex struct {
 			Colocated *string `json:"colocated"`
 			PD        *string `json:"pd"`
 		} `json:"files"`
-		Knobs []struct {
-			ID            string `json:"id"`
-			Kind          string `json:"kind"`
-			Plugin        string `json:"plugin"`
-			Parameter     string `json:"parameter"`
-			Profile       string `json:"profile"`
-			AppliesTo     string `json:"applies_to"`
-			InFile        bool   `json:"in_file"`
-			FileValue     any    `json:"file_value"`
-			RouterDefault any    `json:"router_default"`
-		} `json:"knobs"`
+		Knobs                 []refKnob `json:"knobs"`
+		IneffectiveParameters []refKnob `json:"ineffective_parameters"`
+		PDDecider             *struct {
+			InFile          string `json:"in_file"`
+			CompleteVariant string `json:"complete_variant"`
+		} `json:"pd_decider"`
 	} `json:"policies"`
 }
 
@@ -214,7 +225,7 @@ func TestIndexKnobsMatchFiles(t *testing.T) {
 	idx := readIndex(t)
 	for _, p := range idx.Policies {
 		fs := files(p.Files)
-		for _, k := range p.Knobs {
+		for _, k := range append(slices.Clone(p.Knobs), p.IneffectiveParameters...) {
 			for shape, name := range fs {
 				if k.AppliesTo != "" && k.AppliesTo != shape {
 					continue
@@ -278,13 +289,6 @@ func TestIndexKnobsMatchFiles(t *testing.T) {
 							require.False(t, found, "index says %s.%s is not stated in %s", k.Plugin, k.Parameter, name)
 							require.Equal(t, "not stated", k.FileValue)
 						}
-					case "plugin_choice":
-						for _, pl := range doc.Plugins {
-							if pl.Type == "disagg-profile-handler" {
-								dec, _ := pl.Parameters["deciders"].(map[string]any)
-								require.Equal(t, k.FileValue, dec["prefill"])
-							}
-						}
 					default:
 						t.Fatalf("knob kind %q is not one the tests know", k.Kind)
 					}
@@ -324,4 +328,32 @@ func TestRoundRobinOutsideHostingIsNotStrict(t *testing.T) {
 		}
 	}
 	require.False(t, cycle, "the choice is a fixed cycle; the index says it is not")
+}
+
+// TestIndexSeparatesEffectiveFromIneffectiveParameters: the index lists a parameter as a knob only
+// when it is claimed to change a hosted decision, and lists the ones that cannot with a reason;
+// the decider of a P/D file is not a knob but names a complete variant. The hosted tests in
+// pkg/embed (TestKnobMovesAHostedDecision, TestIneffectiveParametersLeaveTheDecisionAlone) hold
+// the claims to the router.
+func TestIndexSeparatesEffectiveFromIneffectiveParameters(t *testing.T) {
+	idx := readIndex(t)
+	byName := map[string]bool{}
+	for _, p := range idx.Policies {
+		byName[p.Name] = p.Files.PD != nil
+	}
+	for _, p := range idx.Policies {
+		for _, k := range p.Knobs {
+			require.NotNil(t, k.HostedEffect, "%s/%s has no hosted_effect", p.Name, k.ID)
+			require.True(t, *k.HostedEffect, "%s/%s is listed as a knob but is marked ineffective", p.Name, k.ID)
+			require.NotEqual(t, "plugin_choice", k.Kind, "%s/%s: a choice that needs more than one edit is not a knob", p.Name, k.ID)
+		}
+		for _, k := range p.IneffectiveParameters {
+			require.NotNil(t, k.HostedEffect, "%s/%s has no hosted_effect", p.Name, k.ID)
+			require.False(t, *k.HostedEffect, "%s/%s is listed as ineffective but marked effective", p.Name, k.ID)
+			require.NotEmpty(t, k.Reason, "%s/%s is ineffective without a reason", p.Name, k.ID)
+		}
+		if p.PDDecider != nil {
+			require.True(t, byName[p.PDDecider.CompleteVariant], "%s: complete_variant %q is not a P/D policy in the index", p.Name, p.PDDecider.CompleteVariant)
+		}
+	}
 }
