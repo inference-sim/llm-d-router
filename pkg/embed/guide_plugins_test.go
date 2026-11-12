@@ -18,6 +18,7 @@ package embed
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -253,5 +254,230 @@ func TestEndpointDiscoveryRefusalIsTheModelLimitProbeOnly(t *testing.T) {
 	if _, err := build(t, contract.Config{Flags: defaultFlags, Config: []byte(on)}); err == nil ||
 		!strings.Contains(err.Error(), "discoverModelLimits") {
 		t.Errorf("discoverModelLimits: true must be refused naming the setting, got %v", err)
+	}
+}
+
+// screenerConfig is the plugin block of the llm-d wide-EP guide's router file with scoring
+// reduced to the queue: the screener keeps one DisaggregatedSet revision per request, then the
+// P/D profiles pick within it.
+const screenerConfig = `apiVersion: llm-d.ai/v1
+kind: EndpointPickerConfig
+plugins:
+- type: disaggregatedset-rollout-screener
+  parameters:
+    scope:
+      labelSelector: "disaggregatedset.x-k8s.io/name=ws"
+    revisionGating:
+      mode: max-role
+      requiredRoles: [prefill, decode]
+- type: always-disagg-pd-decider
+- type: disagg-profile-handler
+  parameters:
+    deciders:
+      prefill: always-disagg-pd-decider
+- type: prefill-filter
+- type: decode-filter
+- type: random-picker
+schedulingProfiles:
+- name: prefill
+  plugins:
+  - pluginRef: prefill-filter
+  - pluginRef: random-picker
+- name: decode
+  plugins:
+  - pluginRef: decode-filter
+  - pluginRef: random-picker
+`
+
+// setPod adds or updates a pod of the DisaggregatedSet "ws". The third octet of its address
+// says which revision and role it is: 10.0.<rev>.<n>, rev 1 and 2 prefill and decode of
+// revision "a", 4 and 5 of revision "b".
+func setPod(t *testing.T, r contract.Router, rev byte, n int, ready bool) {
+	t.Helper()
+	if err := trySetPod(r, rev, n, ready, true, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func trySetPod(r contract.Router, rev byte, n int, ready, withRevision, withRole bool) error {
+	revision, role := map[byte]string{1: "a", 2: "a", 4: "b", 5: "b"}[rev], map[byte]string{1: "prefill", 2: "decode", 4: "prefill", 5: "decode"}[rev]
+	ip := fmt.Sprintf("10.0.%d.%d", rev, n)
+	labels := map[string]string{
+		"llm-d.ai/inference-serving":     "true",
+		"llm-d.ai/role":                  role,
+		"disaggregatedset.x-k8s.io/name": "ws",
+	}
+	if withRevision {
+		labels["disaggregatedset.x-k8s.io/revision"] = revision
+	}
+	if withRole {
+		labels["disaggregatedset.x-k8s.io/role"] = role
+	}
+	return r.SetEndpoint(contract.Endpoint{Name: ip, IP: ip, Port: 8000, Labels: labels}, ready)
+}
+
+// revisionOf reads the revision a decision went to from the pod addresses, and fails when the
+// prefill and decode pick belong to different revisions.
+func revisionOf(t *testing.T, d contract.Decision) string {
+	t.Helper()
+	rev := func(addr string) string {
+		var a, b, c, e, port int
+		if _, err := fmt.Sscanf(addr, "%d.%d.%d.%d:%d", &a, &b, &c, &e, &port); err != nil {
+			t.Fatalf("address %q: %v", addr, err)
+		}
+		if c <= 2 {
+			return "a"
+		}
+		return "b"
+	}
+	if rev(d.Prefill) != rev(d.Endpoint) {
+		t.Fatalf("prefill %s and decode %s belong to different revisions", d.Prefill, d.Endpoint)
+	}
+	return rev(d.Endpoint)
+}
+
+func newScreenerPool(t *testing.T, seed int64) *refPool {
+	t.Helper()
+	rt := embedtest.NewRuntime(seed)
+	rt.Engines = func(r *http.Request) (*http.Response, error) {
+		return embedtest.Respond(r, http.StatusOK, "text/plain", "# TYPE vllm:num_requests_waiting gauge\nvllm:num_requests_waiting{model_name=\"m\"} 0\n"), nil
+	}
+	r, err := New(context.Background(), rt, contract.Config{Flags: experimentalFlags, Config: []byte(screenerConfig)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(r.Stop)
+	return &refPool{t: t, rt: rt, r: r}
+}
+
+// share routes n requests and returns how many went to each revision.
+func (p *refPool) revisions(n int) map[string]int {
+	got := map[string]int{}
+	for i := 0; i < n; i++ {
+		d, _ := p.route(shortPrompt, false)
+		got[revisionOf(p.t, d)]++
+	}
+	return got
+}
+
+// TestScreenerFollowsThePodsTheEmbeddingCreates: the screener learns pods from the notifications
+// SetEndpoint delivers. With revision "a" complete (2 prefill, 2 decode) and "b" lacking a decode
+// pod, every request goes to "a" and pairs a prefill and a decode pod of one revision; when "b"
+// gets a decode pod the split follows max-role (decode pods 2:1); when "b" loses its last prefill
+// pod, all traffic returns to "a". Without the feed the screener sees no pod and every request is
+// rejected.
+func TestScreenerFollowsThePodsTheEmbeddingCreates(t *testing.T) {
+	p := newScreenerPool(t, 1)
+	for n := 1; n <= 2; n++ {
+		setPod(t, p.r, 1, n, true)
+		setPod(t, p.r, 2, n, true)
+	}
+	setPod(t, p.r, 4, 1, true) // revision b: a prefill pod and no decode pod
+	p.settle()
+	if got := p.revisions(60); got["a"] != 60 {
+		t.Fatalf("revision b has no decode pod, but %v", got)
+	}
+
+	setPod(t, p.r, 5, 1, true) // revision b is now complete: decode pods a:2, b:1
+	p.settle()
+	got := p.revisions(300)
+	if got["b"] < 75 || got["b"] > 125 {
+		t.Errorf("revision b should take about a third of 300 requests (max-role weights 2:1), got %v", got)
+	}
+
+	setPod(t, p.r, 5, 1, false) // b's only decode pod stops being Ready
+	p.settle()
+	if got := p.revisions(60); got["a"] != 60 {
+		t.Errorf("revision b has no Ready decode pod, but %v", got)
+	}
+	setPod(t, p.r, 5, 1, true)
+	p.settle()
+	if got := p.revisions(300); got["b"] == 0 {
+		t.Fatalf("revision b is complete again but took nothing: %v", got)
+	}
+	if err := p.r.RemoveEndpoint("10.0.4.1"); err != nil { // b's only prefill pod is deleted
+		t.Fatal(err)
+	}
+	p.settle()
+	if got := p.revisions(60); got["a"] != 60 {
+		t.Errorf("revision b has no prefill pod, but %v", got)
+	}
+}
+
+// TestScreenerRevisionDrawIsTheRuntimesStream: the revision draw comes from the hosting
+// runtime's seeded stream, so one seed gives one sequence of revisions and another seed another.
+func TestScreenerRevisionDrawIsTheRuntimesStream(t *testing.T) {
+	sequence := func(seed int64) string {
+		p := newScreenerPool(t, seed)
+		for _, rev := range []byte{1, 2, 4, 5} {
+			setPod(t, p.r, rev, 1, true)
+		}
+		p.settle()
+		var sb strings.Builder
+		for i := 0; i < 64; i++ {
+			d, _ := p.route(shortPrompt, false)
+			sb.WriteString(revisionOf(t, d))
+		}
+		return sb.String()
+	}
+	a, again, other := sequence(1), sequence(1), sequence(2)
+	if a != again {
+		t.Errorf("the same seed gave different revision sequences:\n %s\n %s", a, again)
+	}
+	if a == other {
+		t.Errorf("seeds 1 and 2 gave the same revision sequence %s", a)
+	}
+	if !strings.Contains(a, "a") || !strings.Contains(a, "b") {
+		t.Errorf("two equal revisions should both be drawn in 64 requests: %s", a)
+	}
+}
+
+// TestScreenerPodsMustCarryTheirLabels: a pod the pool selects without the revision label (or in
+// scope without the role label) would be dropped from every request, so SetEndpoint refuses it
+// by name; a pod outside the pool, or any pod when gating is off, is not checked.
+func TestScreenerPodsMustCarryTheirLabels(t *testing.T) {
+	p := newScreenerPool(t, 1)
+	err := trySetPod(p.r, 1, 1, true, false, true)
+	var re *contract.RefusalError
+	if !errors.As(err, &re) || re.Type != "disaggregatedset-rollout-screener" ||
+		!strings.Contains(re.Reason, "pod 10.0.1.1") || !strings.Contains(re.Reason, "disaggregatedset.x-k8s.io/revision") ||
+		!strings.HasPrefix(err.Error(), refusedPrefix) {
+		t.Errorf("a pod without the revision label: got %v", err)
+	}
+	err = trySetPod(p.r, 1, 2, true, true, false)
+	if !errors.As(err, &re) || !strings.Contains(re.Reason, "disaggregatedset.x-k8s.io/role") {
+		t.Errorf("a pod in scope without the role label: got %v", err)
+	}
+	outside := contract.Endpoint{Name: "x", IP: "10.9.9.9", Port: 8000, Labels: map[string]string{"app": "other"}}
+	if err := p.r.SetEndpoint(outside, true); err != nil {
+		t.Errorf("a pod the pool does not select is refused: %v", err)
+	}
+	if err := trySetPod(p.r, 1, 3, true, true, true); err != nil {
+		t.Errorf("a fully labelled pod is refused: %v", err)
+	}
+
+	off := strings.Replace(screenerConfig, "mode: max-role", "mode: disabled", 1)
+	r, err := New(context.Background(), embedtest.NewRuntime(1), contract.Config{Flags: experimentalFlags, Config: []byte(off)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(r.Stop)
+	if err := trySetPod(r, 1, 1, true, false, false); err != nil {
+		t.Errorf("with revision gating off a pod without labels is refused: %v", err)
+	}
+}
+
+// TestP2PSourceProducerIsRefusedByName: the producer sets a header that asks a peer engine to
+// pull KV blocks. Without a P2P KV tier in the engines nothing would pull, so it stays refused,
+// with a reason that names the tier, and the host's policy cannot lift it.
+func TestP2PSourceProducerIsRefusedByName(t *testing.T) {
+	cfg := withConfig("plugins:\n- type: p2p-source-producer\n- type: queue-scorer\n- type: max-score-picker\n- type: single-profile-handler\n" +
+		"schedulingProfiles:\n- name: default\n  plugins:\n  - pluginRef: queue-scorer\n  - pluginRef: max-score-picker\n")
+	cfg.Flags = experimentalFlags
+	cfg.Allow = func(string) (bool, string) { return true, "" }
+	_, err := build(t, cfg)
+	var re *contract.RefusalError
+	if !errors.As(err, &re) || re.Type != "p2p-source-producer" || re.Reason == notAudited || !strings.Contains(re.Reason, "P2P KV tier") {
+		t.Fatalf("want p2p-source-producer refused with a reason naming the P2P KV tier, got %v", err)
 	}
 }

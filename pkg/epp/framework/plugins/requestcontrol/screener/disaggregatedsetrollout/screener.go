@@ -19,11 +19,11 @@ package disaggregatedsetrollout
 import (
 	"context"
 	"errors"
-	"math/rand/v2"
 	"sort"
 
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	"github.com/llm-d/llm-d-router/pkg/common/hosting"
 	reqcommon "github.com/llm-d/llm-d-router/pkg/common/request"
 	fwkdl "github.com/llm-d/llm-d-router/pkg/epp/framework/interface/datalayer"
 	fwkplugin "github.com/llm-d/llm-d-router/pkg/epp/framework/interface/plugin"
@@ -78,7 +78,7 @@ func (c *Screener) Screen(ctx context.Context, request *fwksched.InferenceReques
 	// request in P/D must use the revision stamped by prefill; it must not depend
 	// on the two EPPs sharing a CrossReplicaSyncer.
 	if chosenRevision == "" {
-		chosenRevision = pickWeightedRevision(shares, rand.Float64()) //#nosec G404 -- traffic split across revisions, not security-sensitive
+		chosenRevision = pickWeightedRevision(shares, hosting.From(ctx).Rand("disaggregatedset-rollout-screener").Float64())
 		if decisionID := revisionDecisionID(request); distribution.needsCoordination && decisionID != "" && chosenRevision != "" {
 			var err error
 			chosenRevision, err = c.getOrSetRevision(ctx, decisionID, chosenRevision)
@@ -197,15 +197,17 @@ func revisionSumWeight(perRole map[string]int, required []string) (int, bool) {
 
 func pickWeightedRevision(shares map[string]float64, draw float64) string {
 	revisions := make([]string, 0, len(shares))
-	total := 0.0
-	for revision, share := range shares {
+	for revision := range shares {
 		revisions = append(revisions, revision)
-		total += share
+	}
+	sort.Strings(revisions)
+	total := 0.0
+	for _, revision := range revisions {
+		total += shares[revision]
 	}
 	if total == 0 {
 		return ""
 	}
-	sort.Strings(revisions)
 	if len(revisions) == 1 {
 		return revisions[0]
 	}

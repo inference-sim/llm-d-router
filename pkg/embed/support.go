@@ -85,6 +85,10 @@ var audited = map[string]bool{
 	"precise-prefix-cache-producer": true,
 	// admission
 	"probabilistic-admitter": true,
+	// its revision draw is the runtime's stream; it learns pods from the notifications
+	// Router.SetEndpoint delivers, and Router.checkPod refuses a pod it could not see (see
+	// podfeed.go). The host's assumption: one revision per set, no rollout simulated.
+	"disaggregatedset-rollout-screener": true,
 	// saturation detectors
 	"utilization-detector":    true,
 	"concurrency-detector":    true,
@@ -120,21 +124,21 @@ var audited = map[string]bool{
 // draw from process-wide randomness, run unrouted background work, or reach a service a hosted
 // router has no access to. They are refused with this reason before the host's policy is asked.
 var hostingReasons = map[string]string{
-	"burst-prefix-cache-producer":       "it blocks a request on a sealing timer the hosting runtime does not model",
-	"predicted-latency-producer":        "it calls an external latency-predictor service",
-	"latency-scorer":                    "it consumes the external latency predictor",
-	"latency-slo-admitter":              "it consumes the external latency predictor",
-	"slo-headroom-tier-filter":          "it consumes the external latency predictor",
-	"latency-observer-producer-hub":     "its clock reads have not been moved onto the hosting runtime",
-	"latency-observation-scorer-hub":    "its exploration draws from process-wide randomness",
-	"session-state-producer":            "its clock reads have not been moved onto the hosting runtime",
-	"program-aware-fairness":            "its background eviction loop and clock reads have not been moved onto the hosting runtime",
-	"thunder-agent":                     "it calls an external agent service",
-	"redis-syncer":                      "it synchronizes through an external Redis",
-	"k8s-notification-source":           "it needs a Kubernetes controller manager",
-	"k8s-peer-discovery":                "it needs a Kubernetes API server",
-	"disaggregatedset-rollout-screener": "its revision split draws from process-wide randomness",
-	"request-attribute-reporter":        "it has not been audited for the hosting runtime",
+	"burst-prefix-cache-producer":    "it blocks a request on a sealing timer the hosting runtime does not model",
+	"predicted-latency-producer":     "it calls an external latency-predictor service",
+	"latency-scorer":                 "it consumes the external latency predictor",
+	"latency-slo-admitter":           "it consumes the external latency predictor",
+	"slo-headroom-tier-filter":       "it consumes the external latency predictor",
+	"latency-observer-producer-hub":  "its clock reads have not been moved onto the hosting runtime",
+	"latency-observation-scorer-hub": "its exploration draws from process-wide randomness",
+	"session-state-producer":         "its clock reads have not been moved onto the hosting runtime",
+	"program-aware-fairness":         "its background eviction loop and clock reads have not been moved onto the hosting runtime",
+	"thunder-agent":                  "it calls an external agent service",
+	"redis-syncer":                   "it synchronizes through an external Redis",
+	"k8s-notification-source":        "it needs a Kubernetes controller manager",
+	"k8s-peer-discovery":             "it needs a Kubernetes API server",
+	"request-attribute-reporter":     "it has not been audited for the hosting runtime",
+	"p2p-source-producer":            "it asks a peer engine to pull KV blocks, which needs vLLM's P2P KV tier; the simulator does not model one",
 }
 
 // policy decides which plugin types a router instance may instantiate.
