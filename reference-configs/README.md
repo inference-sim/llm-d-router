@@ -94,13 +94,41 @@ among equal scores. `strict_per_request_rotation` is `false` for every policy in
 
 ## Knobs
 
-Each policy in `policies.json` lists its knobs with `kind` (`scorer_weight`, `plugin_parameter` or
-`plugin_choice`), the plugin, the value in the file or `not stated`, the router's default, and the
-source line. A knob with `in_file: false` is set by adding the parameter (or the plugin, for the
-producers the router creates itself) to a copy of the file. The tests check that the index agrees
-with the files for every knob stated in a file and that the file does not state the ones the index
-marks `not stated`. The router defaults are transcribed from the cited lines; the tests assert
-only the scorer-weight default and the picker default, which the loader exports.
+Each policy in `policies.json` has three lists.
+
+- `knobs`: the parameters a configuration search may sweep. Each has `kind` (`scorer_weight` or
+  `plugin_parameter`), the plugin, the value in the file or `not stated`, the router's default, the
+  source line, and `hosted_effect: true`: moving it changes what the hosted router decides.
+  `pkg/embed` `TestKnobMovesAHostedDecision` moves every knob in every file that carries it, over
+  stub engines whose queue, KV usage and cache block size the test sets, and fails when the two
+  settings decide alike. A few knobs say when they act (`effective_when`): `matchLengthScaleTokens`
+  only while `matchLengthWeight` is above 0; `maxBusyScore` only at 0 in a file whose one scorer is
+  the active-request scorer (any other value scales scores and keeps their order).
+- `ineffective_parameters`: parameters the router accepts that cannot change a hosted decision,
+  each with `hosted_effect: false` and a `reason`. A search must not sweep them.
+  `TestIneffectiveParametersLeaveTheDecisionAlone` sets each one and shows the decisions do not
+  move. They are `picker.maxNumOfEndpoints` (the hosted boundary keeps the first endpoint, in
+  `pkg/embed/route.go`; the embed contract carries one endpoint per decision, so only the value 1
+  is modelled), `inflight-load-producer.addEstimatedOutputTokens` (the active-request scorer reads
+  request counts, not tokens), `prefix-based-pd-decider.prefixMatchInfoProducerName` (it names the
+  one producer the file declares; any other name fails to load) and
+  `approx-prefix-cache-producer.maxPrefixBlocksToMatch` (read only when `maxPrefixTokensToMatch` is
+  0, and it is not).
+- `pd_decider`, on the P/D files of `round-robin`, `random-picker` and `least-active-requests`: the
+  decider is not a knob. Swapping `always-disagg-pd-decider` for `prefix-based-pd-decider` takes the
+  producer, a prefix scorer in both profiles and a `nonCachedTokens` above 0, and replacing the
+  name alone makes the file fail to load. `complete_variant` names the policy that is that whole
+  file (`pd-prefix-based`); it scores with the prefix scorer 2 and the queue scorer 1, so it is a
+  different policy, not this one with another decider.
+
+A knob with `in_file: false` is set by adding the parameter (or the plugin, for the producers the
+router creates itself) to a copy of the file. The tests check that the index agrees with the files
+for every parameter stated in a file and that the file does not state the ones the index marks
+`not stated`. The router defaults are transcribed from the cited lines; the tests assert only the
+scorer-weight default and the picker default, which the loader exports.
+
+The router's saturation detector drops an endpoint whose queue exceeds 5 or whose KV usage exceeds
+0.8 before any scorer runs; a search that needs a scorer to decide must stay under those limits.
 
 `maxPrefixTokensToMatch` in `pd-prefix-based` is 16384 in the sample and 131072 in the router
 (`approximateprefix/types.go:131-135`); `lruCapacityPerServer` is 31250 in both.
@@ -110,8 +138,8 @@ only the scorer-weight default and the picker default, which the loader exports.
 From a checkout of this repository, with the Go toolchain `go.mod` names:
 
 ```sh
-go test ./cmd/epp/runner/ -run 'ReferenceConfigsLoad|LoaderRefuses|PDSampleIsThe|BuiltInDefault|IndexKnobs|RoundRobinOutside'
-go test ./pkg/embed/ -run 'RoundRobin|RandomPickerFiles|LeastActive|TestDefault|TestPDSample'
+go test ./cmd/epp/runner/ -run 'ReferenceConfigsLoad|LoaderRefuses|PDSampleIsThe|BuiltInDefault|IndexKnobs|IndexSeparates|RoundRobinOutside'
+go test ./pkg/embed/ -run 'RoundRobin|RandomPickerFiles|LeastActive|TestDefault|TestPDSample|TestKnobMoves|TestIneffective|TestPrefixMatchProducer|TestMaxNum'
 ```
 
 Expected: `ok` for both, in about a second each. The first loads every indexed file through the
@@ -121,7 +149,8 @@ against the files. The second gives each file to the hosted router with a determ
 (`embedtest.NewRuntime(1)`) and routes requests: role filters hold, `least-active-requests` sends
 a request to the endpoint with none in flight, `default` avoids a long queue and follows a cached
 prefix, the sample disaggregates a new long prompt and not a cached or short one, and
-raising `nonCachedTokens` above the prompt length stops it.
+raising `nonCachedTokens` above the prompt length stops it, and every knob in the index moves a
+decision (and every ineffective parameter does not).
 
 ## What this does not do
 
