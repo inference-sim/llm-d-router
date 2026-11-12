@@ -14,13 +14,18 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-
 package embed
 
 import (
+	"context"
 	"fmt"
+	"net/http"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/inference-sim/blis-substrate/contracts/conformance/embedtest"
+	contract "github.com/inference-sim/blis-substrate/contracts/embed"
 )
 
 // experimentalFlags select the standalone pool and allow the Alpha plugins the llm-d guides use.
@@ -111,5 +116,142 @@ func TestUtilizationFilterReadsTheInFlightCount(t *testing.T) {
 	d, _ = p.route(shortPrompt, false)
 	if d.Endpoint != first.Endpoint {
 		t.Errorf("after the first request completed, the only endpoint under the cap is %s, got %s", first.Endpoint, d.Endpoint)
+	}
+}
+
+// renderConfig is a colocated precise-prefix configuration whose token-producer renders prompts
+// on url, or on the pool's endpoints when url is empty (the llm-d precise-prefix guide's form).
+func renderConfig(url string) string {
+	vllm := "      url: " + url
+	if url == "" {
+		vllm = "      endpointDiscovery:\n        attemptTimeout: 2s"
+	}
+	return `apiVersion: llm-d.ai/v1
+kind: EndpointPickerConfig
+plugins:
+- type: token-producer
+  parameters:
+    modelName: m
+    vllm:
+` + vllm + `
+- type: precise-prefix-cache-producer
+  parameters:
+    tokenProcessorConfig:
+      blockSizeTokens: 16
+    kvEventsConfig:
+      zmqEndpoint: tcp://0.0.0.0:5557
+    indexerConfig:
+      kvBlockIndexConfig:
+        enableMetrics: false
+- type: prefix-cache-scorer
+  parameters:
+    prefixMatchInfoProducerName: precise-prefix-cache-producer
+- type: max-score-picker
+- type: single-profile-handler
+schedulingProfiles:
+- name: default
+  plugins:
+  - pluginRef: max-score-picker
+  - pluginRef: prefix-cache-scorer
+    weight: 10
+`
+}
+
+// renderPool is a hosted router with plain endpoints 10.0.3.1..ready (and notReady more that are
+// not Ready) whose engines answer metrics and render calls, and record every request they get.
+type renderPool struct {
+	*refPool
+	calls []string // "host path" of each engine request, in order
+}
+
+func newRenderPool(t *testing.T, cfg string, ready, notReady int) *renderPool {
+	t.Helper()
+	rp := &renderPool{}
+	rt := embedtest.NewRuntime(1)
+	rt.Engines = func(r *http.Request) (*http.Response, error) {
+		rp.calls = append(rp.calls, r.URL.Host+" "+r.URL.Path)
+		if strings.HasSuffix(r.URL.Path, "/v1/completions/render") {
+			return renderEngines(r)
+		}
+		return embedtest.Respond(r, http.StatusOK, "text/plain", "# TYPE vllm:num_requests_waiting gauge\nvllm:num_requests_waiting{model_name=\"m\"} 0\n"), nil
+	}
+	r, err := New(context.Background(), rt, contract.Config{Flags: defaultFlags, Config: []byte(cfg)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(r.Stop)
+	for i := 1; i <= ready+notReady; i++ {
+		ip := fmt.Sprintf("10.0.3.%d", i)
+		ep := contract.Endpoint{Name: ip, IP: ip, Port: 8000, Labels: map[string]string{"llm-d.ai/inference-serving": "true"}}
+		if err := r.SetEndpoint(ep, i <= ready); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rt.Settle()
+	rt.Advance(200 * time.Millisecond)
+	rp.refPool = &refPool{t: t, rt: rt, r: r}
+	rp.calls = nil
+	return rp
+}
+
+// renderHosts are the hosts the engines saw render calls on, in order.
+func (p *renderPool) renderHosts() []string {
+	var out []string
+	for _, c := range p.calls {
+		if host, path, _ := strings.Cut(c, " "); strings.HasSuffix(path, "/v1/completions/render") {
+			out = append(out, host)
+		}
+	}
+	return out
+}
+
+// TestTokenProducerEndpointDiscoveryRendersOnThePoolInRotation: with endpointDiscovery and no
+// discoverModelLimits the token-producer renders on the pool's Ready endpoints in identity
+// order, skips an endpoint that is not Ready, never probes /v1/models, and the routing decisions
+// are those of the fixed-url form on the same endpoints. The host's assumption is that a render
+// call takes no simulated time, which the engines' immediate answers state.
+func TestTokenProducerEndpointDiscoveryRendersOnThePoolInRotation(t *testing.T) {
+	const requests = 12
+	discovered := newRenderPool(t, renderConfig(""), 4, 1)
+	fixed := newRenderPool(t, renderConfig("http://render.embedtest.local:8000"), 4, 1)
+	var got, want []string
+	for i := 0; i < requests; i++ {
+		prompt := longPrompt(i%3+1, 64)
+		d, _ := discovered.route(prompt, false)
+		f, _ := fixed.route(prompt, false)
+		got, want = append(got, d.Endpoint), append(want, f.Endpoint)
+	}
+	hosts := discovered.renderHosts()
+	if len(hosts) != requests {
+		t.Fatalf("%d render calls for %d requests: %v", len(hosts), requests, hosts)
+	}
+	order := []string{"10.0.3.1:8000", "10.0.3.2:8000", "10.0.3.3:8000", "10.0.3.4:8000"}
+	for i, h := range hosts {
+		if h != order[i%len(order)] {
+			t.Fatalf("render call %d went to %s, want %s (identity order over the Ready endpoints; the NotReady 10.0.3.5 is skipped): %v",
+				i, h, order[i%len(order)], hosts)
+		}
+	}
+	for _, c := range discovered.calls {
+		if strings.Contains(c, "/v1/models") {
+			t.Errorf("an engine was probed for its model limits: %s", c)
+		}
+	}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("decisions differ from the fixed-url form\n discovered %v\n fixed      %v", got, want)
+	}
+}
+
+// TestEndpointDiscoveryRefusalIsTheModelLimitProbeOnly: discoverModelLimits is the setting that
+// starts the 30 s probe loop; spelled false it is accepted like an absent one.
+func TestEndpointDiscoveryRefusalIsTheModelLimitProbeOnly(t *testing.T) {
+	off := strings.Replace(renderConfig(""), "attemptTimeout: 2s", "discoverModelLimits: false", 1)
+	if _, err := build(t, contract.Config{Flags: defaultFlags, Config: []byte(off)}); err != nil {
+		t.Errorf("discoverModelLimits: false is refused: %v", err)
+	}
+	on := strings.Replace(renderConfig(""), "attemptTimeout: 2s", "discoverModelLimits: true", 1)
+	if _, err := build(t, contract.Config{Flags: defaultFlags, Config: []byte(on)}); err == nil ||
+		!strings.Contains(err.Error(), "discoverModelLimits") {
+		t.Errorf("discoverModelLimits: true must be refused naming the setting, got %v", err)
 	}
 }

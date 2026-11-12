@@ -167,7 +167,7 @@ func TestNewRefusals(t *testing.T) {
 			"the manifests define an InferencePool but the EPP flags select a standalone pool (--endpoint-selector); pass --pool-name"},
 		{"pod manifest", contract.Config{Flags: defaultFlags, Manifests: []byte("apiVersion: v1\nkind: Pod\nmetadata:\n  name: p\n")},
 			"manifest document 0: a Pod manifest cannot be simulated: BLIS creates the model-server pods from the scenario"},
-		{"endpoint discovery", withConfig(pd), refusedPrefix + `plugin "token-producer" discovers render endpoints (vllm.endpointDiscovery)`},
+		{"endpoint discovery", withConfig(pd), refusedPrefix + `plugin "token-producer" probes model limits (vllm.endpointDiscovery.discoverModelLimits)`},
 		{"redis index", withConfig(precise("redisConfig:\n          address: x")), refusedPrefix + `plugin "precise-prefix-cache-producer" keeps its index in Redis, an external service`},
 		{"cost-aware index", withConfig(precise("costAwareMemoryConfig:\n          size: 1GiB")), refusedPrefix + `plugin "precise-prefix-cache-producer" uses the cost-aware index`},
 		{"affinity filter on the latency predictor", withConfig("plugins:\n- type: prefix-cache-affinity-filter\n  parameters:\n    ttftSource: latencyPredictor\n"),
