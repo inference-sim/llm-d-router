@@ -99,7 +99,7 @@ type Router struct {
 //     --pool-name names, or the standalone pool of --endpoint-selector.
 //  3. Call cfg.Check with the Requirements and Pool, and return its error as is.
 //  4. Refuse configurations the hosting cannot run: a topology form that needs a coordinator, a
-//     render backend that discovers endpoints, a Redis or cost-aware KV index
+//     render backend that probes model limits, a Redis or cost-aware KV index
 //     ("the router configuration cannot be simulated faithfully: ...").
 //  5. Assemble the router ("llm-d router: ..."). Each plugin type is refused before its
 //     constructor runs, with an error wrapping an *embed.RefusalError: a type the fork cannot

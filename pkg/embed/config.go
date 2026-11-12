@@ -281,7 +281,10 @@ func topologyExtractorFacts(name string, params map[string]any) contract.Topolog
 //   - a topology consumer with a peer topology header needs a coordinator, and an embedding runs
 //     one router; a topology stamp handler must use the peer topology header and an existing
 //     profile; a topology consumer needs the topology extractor it names;
-//   - a token-producer whose vLLM backend discovers endpoints probes pods on its own schedule;
+//   - a token-producer whose vLLM endpoint discovery sets discoverModelLimits probes every pod's
+//     /v1/models on a 30 s wall-clock ticker. Discovery without it is a sorted list of the
+//     pool's endpoints and a round-robin cursor, which the router's endpoint events keep; the
+//     host's assumption is that a render call takes no simulated time (as with a fixed url);
 //   - a precise-prefix-cache-producer whose index is in Redis reaches the network, and the
 //     cost-aware index ranges a sync.Map, so its order is not reproducible;
 //   - a prefix-cache-affinity-filter whose load gate reads TTFT from the latency predictor
@@ -299,9 +302,12 @@ func hostingRefusal(doc configDoc) error {
 	for _, p := range doc.plugins {
 		switch p.Type {
 		case "token-producer":
-			if v, _ := p.Parameters["vllm"].(map[string]any); v != nil && enabled(v["endpointDiscovery"]) {
-				return fmt.Errorf("plugin %q discovers render endpoints (vllm.endpointDiscovery), probing pods on its own "+
-					"schedule outside the simulation; give its vLLM backend a fixed url, or use the estimate backend", p.name())
+			v, _ := p.Parameters["vllm"].(map[string]any)
+			d, _ := v["endpointDiscovery"].(map[string]any)
+			if enabled(d["discoverModelLimits"]) {
+				return fmt.Errorf("plugin %q probes model limits (vllm.endpointDiscovery.discoverModelLimits) on a 30 s "+
+					"wall-clock schedule outside the simulation; leave discoverModelLimits off, give its vLLM backend a "+
+					"fixed url, or use the estimate backend", p.name())
 			}
 		case "prefix-cache-affinity-filter":
 			if src, _ := p.Parameters["ttftSource"].(string); src == "latencyPredictor" {
