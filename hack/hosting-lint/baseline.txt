@@ -257,9 +257,8 @@ pkg/epp/framework/plugins/requestcontrol/screener/disaggregatedsetrollout/plugin
 pkg/epp/framework/plugins/requestcontrol/screener/disaggregatedsetrollout/plugin.go	newRevisionDistribution	range-map	2	for revision, perRole := range covered {
 pkg/epp/framework/plugins/requestcontrol/screener/disaggregatedsetrollout/plugin.go	newRevisionDistribution	range-map	1	for revision, perRole := range roleCounts {
 pkg/epp/framework/plugins/requestcontrol/screener/disaggregatedsetrollout/plugin.go	newRevisionDistribution	range-map	1	for revision, weight := range weights {
-pkg/epp/framework/plugins/requestcontrol/screener/disaggregatedsetrollout/screener.go	Screener.Screen	rand.Float64	1	chosenRevision = pickWeightedRevision(shares, rand.Float64()) //#nosec G404 -- traffic split across revisions, not security-sensitive
 pkg/epp/framework/plugins/requestcontrol/screener/disaggregatedsetrollout/screener.go	Screener.Screen	range-map	1	for revision := range seenRevisions {
-pkg/epp/framework/plugins/requestcontrol/screener/disaggregatedsetrollout/screener.go	pickWeightedRevision	range-map	1	for revision, share := range shares {
+pkg/epp/framework/plugins/requestcontrol/screener/disaggregatedsetrollout/screener.go	pickWeightedRevision	range-map	1	for revision := range shares {
 pkg/epp/framework/plugins/requestcontrol/selectivekv/plugin.go	Plugin.externalReusableTokens	range-map	1	for tier, blocks := range byTier {
 pkg/epp/framework/plugins/requesthandling/parsers/anthropic/anthropic.go	AnthropicParser.ParseResponse	range-map	1	for k, v := range headers {
 pkg/epp/framework/plugins/requesthandling/parsers/openai/openai.go	extractUsageHeaders	range-map	1	for header, target := range map[string]*int{
