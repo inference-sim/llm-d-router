@@ -1,0 +1,26 @@
+# default: the configuration the router builds when it is given none
+# (pkg/epp/config/loader/defaults.go loadDefaultConfig, lines 48-107), written as a file.
+# Loading this file and loading no configuration give the same effective configuration;
+# default_test.go in cmd/epp/runner checks it.
+apiVersion: llm-d.ai/v1
+kind: EndpointPickerConfig
+plugins:
+- type: queue-scorer
+- type: kv-cache-utilization-scorer
+- type: prefix-cache-scorer
+- type: metrics-data-source
+- type: core-metrics-extractor
+schedulingProfiles:
+- name: default
+  plugins:
+  - pluginRef: queue-scorer
+    weight: 2
+  - pluginRef: kv-cache-utilization-scorer
+    weight: 2
+  - pluginRef: prefix-cache-scorer
+    weight: 3
+dataLayer:
+  sources:
+  - pluginRef: metrics-data-source
+    extractors:
+    - pluginRef: core-metrics-extractor

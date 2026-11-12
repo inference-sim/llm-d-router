@@ -1,0 +1,109 @@
+{
+  "schema": 1,
+  "router": {
+    "repository": "inference-sim/llm-d-router",
+    "branch": "llm-d-r",
+    "upstream_release": "v1.0.0",
+    "upstream_base": "b9393d1a9f1d5a72ecd86f8d2b643ab54c2a9b92",
+    "fork_tag_before_this_change": "v1.0.0-blis.3",
+    "tested_from": "dbe130dcc286510e390953bea7456a5aad10f076",
+    "config_api": "llm-d.ai/v1 EndpointPickerConfig",
+    "pin": "Pin the commit that carries this file. The tests in cmd/epp/runner and pkg/embed fail at any commit where a listed file stops being accepted or stops behaving as stated here."
+  },
+  "nearest_policy_names": ["round-robin", "random-picker", "least-active-requests", "default"],
+  "policies": [
+    {
+      "name": "default",
+      "summary": "The router's built-in configuration: queue-scorer 2, kv-cache-utilization-scorer 2, prefix-cache-scorer 3, max-score-picker.",
+      "built_in": "A router given no configuration runs exactly this; default.yaml is that configuration written as a file and a test shows the two give the same effective configuration.",
+      "files": {"colocated": "default.yaml", "pd": null},
+      "pd_note": "No P/D form exists. It has no prefill or decode profile, no role filter and no disaggregation handler, so in a pool that mixes roles it treats every endpoint as one pool and never names a prefill endpoint (test).",
+      "endpoint_choice": "Highest weighted score; endpoints with equal scores are tied (see round-robin for what a tie does).",
+      "source": ["pkg/epp/config/loader/defaults.go:48-105", "pkg/epp/config/loader/configloader.go:80-84"],
+      "knobs": [
+        {"id": "weight.queue-scorer", "kind": "scorer_weight", "plugin": "queue-scorer", "in_file": true, "file_value": 2, "router_default": 1.0, "source": "pkg/epp/config/loader/defaults.go:49,203"},
+        {"id": "weight.kv-cache-utilization-scorer", "kind": "scorer_weight", "plugin": "kv-cache-utilization-scorer", "in_file": true, "file_value": 2, "router_default": 1.0, "source": "pkg/epp/config/loader/defaults.go:50,203"},
+        {"id": "weight.prefix-cache-scorer", "kind": "scorer_weight", "plugin": "prefix-cache-scorer", "in_file": true, "file_value": 3, "router_default": 1.0, "source": "pkg/epp/config/loader/defaults.go:51,203"},
+        {"id": "prefix-cache-scorer.matchLengthWeight", "kind": "plugin_parameter", "plugin": "prefix-cache-scorer", "parameter": "matchLengthWeight", "in_file": false, "file_value": "not stated", "router_default": 0.0, "range": "0.0 to 1.0", "source": "pkg/epp/framework/plugins/scheduling/scorer/prefix/plugin.go:64-66,72-75; README.md:44"},
+        {"id": "prefix-cache-scorer.matchLengthScaleTokens", "kind": "plugin_parameter", "plugin": "prefix-cache-scorer", "parameter": "matchLengthScaleTokens", "in_file": false, "file_value": "not stated", "router_default": 8192, "source": "pkg/epp/framework/plugins/scheduling/scorer/prefix/plugin.go:67-68,72-75"},
+        {"id": "approx-prefix-cache-producer.autoTune", "kind": "plugin_parameter", "plugin": "approx-prefix-cache-producer", "parameter": "autoTune", "in_file": false, "file_value": "not stated", "router_default": true, "note": "The producer is created by the router when no producer is configured (cmd/epp/runner/runner.go:749); a sweep that sets this adds the plugin to the file.", "source": "pkg/epp/framework/plugins/requestcontrol/dataproducer/approximateprefix/types.go:179"},
+        {"id": "approx-prefix-cache-producer.blockSizeTokens", "kind": "plugin_parameter", "plugin": "approx-prefix-cache-producer", "parameter": "blockSizeTokens", "in_file": false, "file_value": "not stated", "router_default": 64, "note": "A value below 64 is raised to 64 at request time.", "source": "pkg/epp/framework/plugins/requestcontrol/dataproducer/approximateprefix/types.go:117-120; plugin.go:48-56,170-176"},
+        {"id": "approx-prefix-cache-producer.maxPrefixTokensToMatch", "kind": "plugin_parameter", "plugin": "approx-prefix-cache-producer", "parameter": "maxPrefixTokensToMatch", "in_file": false, "file_value": "not stated", "router_default": 131072, "source": "pkg/epp/framework/plugins/requestcontrol/dataproducer/approximateprefix/types.go:131-135"},
+        {"id": "approx-prefix-cache-producer.maxPrefixBlocksToMatch", "kind": "plugin_parameter", "plugin": "approx-prefix-cache-producer", "parameter": "maxPrefixBlocksToMatch", "in_file": false, "file_value": "not stated", "router_default": 2048, "note": "Read only when maxPrefixTokensToMatch is 0.", "source": "pkg/epp/framework/plugins/requestcontrol/dataproducer/approximateprefix/types.go:122-129; plugin.go:408-422"},
+        {"id": "approx-prefix-cache-producer.lruCapacityPerServer", "kind": "plugin_parameter", "plugin": "approx-prefix-cache-producer", "parameter": "lruCapacityPerServer", "in_file": false, "file_value": "not stated", "router_default": 31250, "source": "pkg/epp/framework/plugins/requestcontrol/dataproducer/approximateprefix/types.go:143-152"},
+        {"id": "picker.maxNumOfEndpoints", "kind": "plugin_parameter", "plugin": "max-score-picker", "parameter": "maxNumOfEndpoints", "in_file": false, "file_value": "not stated", "router_default": 1, "note": "The picker is added by the loader when the configuration names none.", "source": "pkg/epp/framework/plugins/scheduling/picker/common.go:38-45; pkg/epp/config/loader/defaults.go:181-197"}
+      ]
+    },
+    {
+      "name": "round-robin",
+      "summary": "max-score-picker with no scorer in the profile.",
+      "files": {"colocated": "round-robin.yaml", "pd": "round-robin-pd.yaml"},
+      "endpoint_choice": "Every candidate has score 0, so all are tied. The picker rotates the tied candidates by a counter, but the candidates reach it in a seeded random order in a hosted runtime (pkg/epp/scheduling/scheduler_profile.go:363-370) and in Go map order otherwise (scheduler_profile.go:358-362). A rotation of a random order is a random order.",
+      "strict_per_request_rotation": false,
+      "measured": "In a hosted runtime every endpoint of an even-sized pool is chosen (an even pool does not see only every other endpoint), the choice is not a fixed cycle, and counts are close to equal but not equal to within one. Outside hosting the choice is not a fixed cycle either. The router at this commit has no policy that gives strict per-request rotation over endpoints; the policy behaves as the random picker does.",
+      "tests": ["pkg/embed TestRoundRobinOfAnEvenPDPoolReachesEveryEndpointButIsNotStrict", "pkg/embed TestRoundRobinOfAColocatedPoolIsNotStrict", "cmd/epp/runner TestRoundRobinOutsideHostingIsNotStrict"],
+      "composition_source": "No router sample states this configuration. It is composed from the picker README (pkg/epp/framework/plugins/scheduling/picker/maxscore/README.md:14,19) and the P/D profile pair of the router's well-known configuration (test/integration/epp/wellknown_configs_test.go:108-135).",
+      "source": ["pkg/epp/framework/plugins/scheduling/picker/maxscore/picker.go:88-130", "pkg/epp/framework/plugins/scheduling/picker/common.go:79-132"],
+      "knobs": [
+        {"id": "picker.maxNumOfEndpoints", "kind": "plugin_parameter", "plugin": "max-score-picker", "parameter": "maxNumOfEndpoints", "in_file": false, "file_value": "not stated", "router_default": 1, "source": "pkg/epp/framework/plugins/scheduling/picker/common.go:38-45"},
+        {"id": "pd.decider", "kind": "plugin_choice", "applies_to": "pd", "in_file": true, "file_value": "always-disagg-pd-decider", "choices": ["always-disagg-pd-decider", "prefix-based-pd-decider"], "note": "prefix-based-pd-decider needs approx-prefix-cache-producer and prefix-cache-scorer in both profiles; see pd-prefix-based.", "source": "pkg/epp/framework/plugins/scheduling/profilehandler/disagg/README.md:42-52,116-123"}
+      ]
+    },
+    {
+      "name": "random-picker",
+      "summary": "random-picker in the profile, no scorer.",
+      "files": {"colocated": "random-picker.yaml", "pd": "random-picker-pd.yaml"},
+      "endpoint_choice": "Shuffles the candidates and keeps the first maxNumOfEndpoints; scores are ignored.",
+      "strict_per_request_rotation": false,
+      "composition_source": "Colocated: test/testdata/plugins/stable/v1/random-picker.yaml without its explicit single-profile-handler (the loader adds it) and without its maxNumOfEndpoints: 1 (the default). P/D: the profile pair of the router's well-known configuration (test/integration/epp/wellknown_configs_test.go:108-135).",
+      "source": ["pkg/epp/framework/plugins/scheduling/picker/random/picker.go:87-110"],
+      "knobs": [
+        {"id": "picker.maxNumOfEndpoints", "kind": "plugin_parameter", "plugin": "random-picker", "parameter": "maxNumOfEndpoints", "in_file": false, "file_value": "not stated", "router_default": 1, "source": "pkg/epp/framework/plugins/scheduling/picker/common.go:38-45; test/testdata/plugins/stable/v1/random-picker.yaml:8-9"},
+        {"id": "pd.decider", "kind": "plugin_choice", "applies_to": "pd", "in_file": true, "file_value": "always-disagg-pd-decider", "choices": ["always-disagg-pd-decider", "prefix-based-pd-decider"], "note": "prefix-based-pd-decider needs approx-prefix-cache-producer and prefix-cache-scorer in both profiles; see pd-prefix-based.", "source": "pkg/epp/framework/plugins/scheduling/profilehandler/disagg/README.md:42-52,116-123"}
+      ]
+    },
+    {
+      "name": "least-active-requests",
+      "summary": "active-request-scorer over the in-flight counts of inflight-load-producer, then max-score-picker.",
+      "files": {"colocated": "least-active-requests.yaml", "pd": "least-active-requests-pd.yaml"},
+      "endpoint_choice": "The endpoint with the fewest in-flight requests scores highest. Endpoints with equal counts are tied and the tie is broken as in round-robin, that is at random.",
+      "strict_per_request_rotation": false,
+      "composition_source": "pkg/epp/framework/plugins/scheduling/scorer/activerequest/README.md:3-7 and the profile pair of the router's well-known configuration (test/integration/epp/wellknown_configs_test.go:108-135). The router creates inflight-load-producer when none is configured (cmd/epp/runner/runner.go:750); the files name it so that a sweep can set its parameters.",
+      "source": ["pkg/epp/framework/plugins/scheduling/scorer/activerequest/active_request.go:99-113"],
+      "knobs": [
+        {"id": "weight.active-request-scorer", "kind": "scorer_weight", "plugin": "active-request-scorer", "in_file": false, "file_value": "not stated", "router_default": 1.0, "source": "pkg/epp/config/loader/defaults.go:43-46,203"},
+        {"id": "active-request-scorer.idleThreshold", "kind": "plugin_parameter", "plugin": "active-request-scorer", "parameter": "idleThreshold", "in_file": false, "file_value": "not stated", "router_default": 0, "source": "pkg/epp/framework/plugins/scheduling/scorer/activerequest/active_request.go:99-102; README.md:10"},
+        {"id": "active-request-scorer.maxBusyScore", "kind": "plugin_parameter", "plugin": "active-request-scorer", "parameter": "maxBusyScore", "in_file": false, "file_value": "not stated", "router_default": 1.0, "range": "0.0 to 1.0", "source": "pkg/epp/framework/plugins/scheduling/scorer/activerequest/active_request.go:105-113; README.md:11"},
+        {"id": "inflight-load-producer.addEstimatedOutputTokens", "kind": "plugin_parameter", "plugin": "inflight-load-producer", "parameter": "addEstimatedOutputTokens", "in_file": false, "file_value": "not stated", "router_default": false, "note": "Changes token counts only; the active-request scorer reads request counts.", "source": "pkg/epp/framework/plugins/requestcontrol/dataproducer/inflightload/README.md:30"},
+        {"id": "picker.maxNumOfEndpoints", "kind": "plugin_parameter", "plugin": "max-score-picker", "parameter": "maxNumOfEndpoints", "in_file": false, "file_value": "not stated", "router_default": 1, "source": "pkg/epp/framework/plugins/scheduling/picker/common.go:38-45"},
+        {"id": "pd.decider", "kind": "plugin_choice", "applies_to": "pd", "in_file": true, "file_value": "always-disagg-pd-decider", "choices": ["always-disagg-pd-decider", "prefix-based-pd-decider"], "note": "prefix-based-pd-decider needs approx-prefix-cache-producer and prefix-cache-scorer in both profiles; see pd-prefix-based.", "source": "pkg/epp/framework/plugins/scheduling/profilehandler/disagg/README.md:42-52,116-123"}
+      ]
+    },
+    {
+      "name": "pd-prefix-based",
+      "summary": "The router's own P/D sample: prefill and decode profiles scored by prefix-cache-scorer 2 and queue-scorer 1, a prefix-based decider that sends a request to a prefill endpoint only when at least nonCachedTokens of its prompt are not cached on the chosen decode endpoint.",
+      "files": {"colocated": null, "pd": "pd-prefix-based.yaml"},
+      "copied_from": "deploy/config/pd-epp-config.yaml (a test shows the two parse to the same configuration)",
+      "endpoint_choice": "Highest weighted score per profile; ties as in round-robin. The prefill profile runs only when the decider approves.",
+      "strict_per_request_rotation": false,
+      "source": ["deploy/config/pd-epp-config.yaml:1-37", "pkg/epp/framework/plugins/scheduling/profilehandler/disagg/README.md:90-123"],
+      "knobs": [
+        {"id": "weight.prefill.prefix-cache-scorer", "kind": "scorer_weight", "profile": "prefill", "plugin": "prefix-cache-scorer", "in_file": true, "file_value": 2, "router_default": 1.0, "source": "deploy/config/pd-epp-config.yaml:26-27"},
+        {"id": "weight.prefill.queue-scorer", "kind": "scorer_weight", "profile": "prefill", "plugin": "queue-scorer", "in_file": true, "file_value": 1, "router_default": 1.0, "source": "deploy/config/pd-epp-config.yaml:28-29"},
+        {"id": "weight.decode.prefix-cache-scorer", "kind": "scorer_weight", "profile": "decode", "plugin": "prefix-cache-scorer", "in_file": true, "file_value": 2, "router_default": 1.0, "source": "deploy/config/pd-epp-config.yaml:34-35"},
+        {"id": "weight.decode.queue-scorer", "kind": "scorer_weight", "profile": "decode", "plugin": "queue-scorer", "in_file": true, "file_value": 1, "router_default": 1.0, "source": "deploy/config/pd-epp-config.yaml:36-37"},
+        {"id": "prefix-based-pd-decider.nonCachedTokens", "kind": "plugin_parameter", "plugin": "prefix-based-pd-decider", "parameter": "nonCachedTokens", "in_file": true, "file_value": 16, "router_default": 0, "note": "0 disables disaggregation: the decider then never approves.", "source": "deploy/config/pd-epp-config.yaml:18-20; pkg/epp/framework/plugins/scheduling/profilehandler/disagg/prefix_based_pd_decider.go:44-45,106-110; README.md:121"},
+        {"id": "prefix-based-pd-decider.promptTokens", "kind": "plugin_parameter", "plugin": "prefix-based-pd-decider", "parameter": "promptTokens", "in_file": false, "file_value": "not stated", "router_default": 0, "note": "0 turns the minimum-prompt gate off.", "source": "pkg/epp/framework/plugins/scheduling/profilehandler/disagg/prefix_based_pd_decider.go:47-50,106-110; README.md:122"},
+        {"id": "prefix-based-pd-decider.prefixMatchInfoProducerName", "kind": "plugin_parameter", "plugin": "prefix-based-pd-decider", "parameter": "prefixMatchInfoProducerName", "in_file": false, "file_value": "not stated", "router_default": "approx-prefix-cache-producer", "source": "pkg/epp/framework/plugins/scheduling/profilehandler/disagg/prefix_based_pd_decider.go:51-55; README.md:123"},
+        {"id": "approx-prefix-cache-producer.maxPrefixTokensToMatch", "kind": "plugin_parameter", "plugin": "approx-prefix-cache-producer", "parameter": "maxPrefixTokensToMatch", "in_file": true, "file_value": 16384, "router_default": 131072, "source": "deploy/config/pd-epp-config.yaml:7; pkg/epp/framework/plugins/requestcontrol/dataproducer/approximateprefix/types.go:131-135"},
+        {"id": "approx-prefix-cache-producer.lruCapacityPerServer", "kind": "plugin_parameter", "plugin": "approx-prefix-cache-producer", "parameter": "lruCapacityPerServer", "in_file": true, "file_value": 31250, "router_default": 31250, "source": "deploy/config/pd-epp-config.yaml:8; pkg/epp/framework/plugins/requestcontrol/dataproducer/approximateprefix/types.go:143-152"},
+        {"id": "approx-prefix-cache-producer.blockSizeTokens", "kind": "plugin_parameter", "plugin": "approx-prefix-cache-producer", "parameter": "blockSizeTokens", "in_file": false, "file_value": "not stated", "router_default": 64, "note": "A value below 64 is raised to 64 at request time. The router's simulation sample deploy/config/sim-pd-epp-config.yaml:6-7 sets 16 with autoTune false; it is not offered here.", "source": "pkg/epp/framework/plugins/requestcontrol/dataproducer/approximateprefix/types.go:117-120; plugin.go:48-56,170-176"},
+        {"id": "approx-prefix-cache-producer.autoTune", "kind": "plugin_parameter", "plugin": "approx-prefix-cache-producer", "parameter": "autoTune", "in_file": false, "file_value": "not stated", "router_default": true, "source": "pkg/epp/framework/plugins/requestcontrol/dataproducer/approximateprefix/types.go:179"},
+        {"id": "approx-prefix-cache-producer.maxPrefixBlocksToMatch", "kind": "plugin_parameter", "plugin": "approx-prefix-cache-producer", "parameter": "maxPrefixBlocksToMatch", "in_file": false, "file_value": "not stated", "router_default": 2048, "note": "Read only when maxPrefixTokensToMatch is 0.", "source": "pkg/epp/framework/plugins/requestcontrol/dataproducer/approximateprefix/types.go:122-129"},
+        {"id": "prefix-cache-scorer.matchLengthWeight", "kind": "plugin_parameter", "plugin": "prefix-cache-scorer", "parameter": "matchLengthWeight", "in_file": false, "file_value": "not stated", "router_default": 0.0, "range": "0.0 to 1.0", "source": "pkg/epp/framework/plugins/scheduling/scorer/prefix/plugin.go:64-66,72-75"},
+        {"id": "prefix-cache-scorer.matchLengthScaleTokens", "kind": "plugin_parameter", "plugin": "prefix-cache-scorer", "parameter": "matchLengthScaleTokens", "in_file": false, "file_value": "not stated", "router_default": 8192, "source": "pkg/epp/framework/plugins/scheduling/scorer/prefix/plugin.go:67-68,72-75"},
+        {"id": "picker.maxNumOfEndpoints", "kind": "plugin_parameter", "plugin": "max-score-picker", "parameter": "maxNumOfEndpoints", "in_file": false, "file_value": "not stated", "router_default": 1, "source": "pkg/epp/framework/plugins/scheduling/picker/common.go:38-45"}
+      ]
+    }
+  ]
+}

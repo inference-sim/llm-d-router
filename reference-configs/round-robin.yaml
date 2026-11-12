@@ -1,0 +1,12 @@
+# round-robin, one pool of colocated endpoints.
+# No scorer is configured, so every candidate has the same score and the max-score picker's
+# tie rotation (picker/common.go RotateScoredEndpoints, picker/maxscore/picker.go) chooses.
+# See README.md for the citations and for what this is and is not.
+apiVersion: llm-d.ai/v1
+kind: EndpointPickerConfig
+plugins:
+- type: max-score-picker
+schedulingProfiles:
+- name: default
+  plugins:
+  - pluginRef: max-score-picker

@@ -1,0 +1,22 @@
+# random-picker, prefill and decode pools (P/D). Same shape as round-robin-pd.yaml with the
+# random picker in both profiles.
+apiVersion: llm-d.ai/v1
+kind: EndpointPickerConfig
+plugins:
+- type: prefill-filter
+- type: decode-filter
+- type: random-picker
+- type: always-disagg-pd-decider
+- type: disagg-profile-handler
+  parameters:
+    deciders:
+      prefill: always-disagg-pd-decider
+schedulingProfiles:
+- name: prefill
+  plugins:
+  - pluginRef: prefill-filter
+  - pluginRef: random-picker
+- name: decode
+  plugins:
+  - pluginRef: decode-filter
+  - pluginRef: random-picker

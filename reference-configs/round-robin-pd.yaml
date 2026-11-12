@@ -1,0 +1,26 @@
+# round-robin, prefill and decode pools (P/D).
+# The profile pair and the always-disagg-pd-decider are those of the router's own
+# "pd-disaggregation" well-known configuration (test/integration/epp/wellknown_configs_test.go);
+# the profiles carry a filter and the max-score picker and no scorer. Every request is sent to
+# one prefill endpoint and one decode endpoint. See README.md: the picker draws one counter at
+# each profile pick, so the rotation inside one pool is not strict per request.
+apiVersion: llm-d.ai/v1
+kind: EndpointPickerConfig
+plugins:
+- type: prefill-filter
+- type: decode-filter
+- type: max-score-picker
+- type: always-disagg-pd-decider
+- type: disagg-profile-handler
+  parameters:
+    deciders:
+      prefill: always-disagg-pd-decider
+schedulingProfiles:
+- name: prefill
+  plugins:
+  - pluginRef: prefill-filter
+  - pluginRef: max-score-picker
+- name: decode
+  plugins:
+  - pluginRef: decode-filter
+  - pluginRef: max-score-picker
