@@ -9,6 +9,7 @@ unchanged by the router's configuration loader, and a test routes requests throu
 
 - [Who uses this](#who-uses-this)
 - [The files](#the-files)
+- [The llm-d guide files](#the-llm-d-guide-files)
 - [What round-robin does](#what-round-robin-does)
 - [Knobs](#knobs)
 - [Reproduce the checks](#reproduce-the-checks)
@@ -24,7 +25,7 @@ named file to the router as its configuration, with a swept knob changed in a co
 
 `policies.json` is the machine-readable entry point. Its `router` block states the release the
 files are valid for: upstream `v1.0.0` (commit `b9393d1a9f1d5a72ecd86f8d2b643ab54c2a9b92`) plus the
-fork's changes, tested from `dbe130dcc286510e390953bea7456a5aad10f076`. The files carry no commit of
+fork's changes, tested from `4bce4f8f2176eb62ce648feb411d8f1ac19b0790`, the commit that hosts the plugins the guide files use. The files carry no commit of
 their own; the commit that holds them is the pin, and the tests below fail at any commit where a
 file stops loading or stops behaving as the index says.
 
@@ -62,6 +63,56 @@ Not included: the router's simulation sample `deploy/config/sim-pd-epp-config.ya
 `blockSizeTokens: 16` with `autoTune: false`; the producer raises a block size below 64 to 64 at
 request time (`approximateprefix/plugin.go:48-56,170-176`), so the sample's setting is not what
 runs.
+
+## The llm-d guide files
+
+`guides/` holds the router configuration of ten llm-d v1.0.0 guides
+(`378b42d18dabe0b9c4ced4e6f3670d93b52db08e`), each a byte-for-byte copy of the plugin config in the
+guide's Helm values file, dedented: the file a deployment of the guide runs. They are indexed in
+`policies.json` like the others, with the guide path and line range in `copied_from` and `source`.
+They are the files BLIS must run unedited (design X1); a copy that drops a plugin the host
+cannot run, such as the screener, is not one of them.
+
+| Policy | File | Source in the guide | Shape | Runs hosted from | Host assumption |
+|---|---|---|---|---|---|
+| `llm-d-optimized-baseline` | `guides/optimized-baseline.yaml` | `guides/optimized-baseline/router/optimized-baseline.values.yaml:15-30` | colocated | v1.0.0-blis.3 | none |
+| `llm-d-pd-disaggregation` | `guides/pd-disaggregation.yaml` | `guides/pd-disaggregation/router/pd-disaggregation.values.yaml:17-59` | P/D | v1.0.0-blis.3 | none |
+| `llm-d-tiered-prefix-cache-cpu` | `guides/tiered-prefix-cache-cpu.yaml` | `guides/tiered-prefix-cache/router/single-host/tiered-prefix-cache-cpu.values.yaml:15-52` | colocated | v1.0.0-blis.3 | none |
+| `llm-d-nemotron-3-ultra` | `guides/nemotron-3-ultra.yaml` | `guides/models/nemotron-3-ultra/router/nemotron-3-ultra.values.yaml:25-54` | P/D | v1.0.0-blis.3 | none |
+| `llm-d-precise-prefix-cache-routing` | `guides/precise-prefix-cache-routing.yaml` | `guides/precise-prefix-cache-routing/router/precise-prefix-cache-routing.values.yaml:43-140` | colocated | this change | render calls take no simulated time |
+| `llm-d-wide-ep` | `guides/wide-ep.yaml` | `guides/wide-ep/router/wide-ep.values.yaml:15-50` | P/D | this change | one revision; no rollout is simulated |
+| `llm-d-glm-5-2` | `guides/glm-5-2.yaml` | `guides/models/glm-5-2/router/glm-5-2.values.yaml:20-64` | P/D | this change | one revision; no rollout is simulated |
+| `llm-d-glm-5-2-gpu-cpu-affinity` | `guides/glm-5-2-gpu-cpu-affinity.yaml` | `guides/models/glm-5-2/router/glm-5.2-overrides.values.yaml:9-63` | P/D | this change | one revision; no rollout is simulated |
+| `llm-d-glm-5-2-precise` | `guides/glm-5-2-precise.yaml` | `guides/models/glm-5-2/router/precise-routing.values.yaml:20-100` | P/D | this change | one revision; no rollout is simulated; render calls take no simulated time |
+| `llm-d-deepseek-v4` | `guides/deepseek-v4.yaml` | `guides/models/deepseek-v4/router/deepseek-v4.values.yaml:20-71` | P/D | this change | one revision; no rollout is simulated |
+
+Fields an entry adds to the others:
+
+- `requires`: what the scenario must provide. `epp_flags` (`--allow-experimental-plugins` for every
+  file with the `disaggregatedset-rollout-screener`, which is Alpha; a test shows each file loads
+  with the flag and, if the index says it is needed, is refused without it), `pod_labels` (the
+  labels the screener reads: set name, revision, role; every pod of the pool must carry the
+  revision label, and `SetEndpoint` refuses one that does not), `model` (the token-producer's model
+  name, which the requests carry), `engine.block_size` and `kv_events` (the precise producer
+  indexes the engines' KV events, and its block size must equal the engines'), `render_url`.
+- `host_assumption`: what the host does not model and the file's behaviour rests on. The screener
+  files: one revision, no rollout simulated; the screener then keeps every pod whose two required
+  roles both have a Ready pod, and a role with no Ready pod drops every request, as in the router.
+  The two files that render prompts on model servers: a render call takes no simulated time.
+- `runs_hosted_from`: the fork tag from which the file runs hosted. The four that ran before this
+  change say `v1.0.0-blis.3`; the other six need the plugins this change hosts, and say so in
+  `needs`.
+- `not_modelled`: the wide-EP and GLM guides list eight target ports (one per data-parallel rank).
+  A pool with several target ports is a separate track; a hosted run of these files uses one port.
+- `knobs_complete: false`: only parameters shown to move a hosted decision are listed. The other
+  parameters of the plugins have no hosted test yet and are neither swept nor claimed ineffective.
+
+To check a copy against the guide (from a checkout of llm-d at the tag, `G` its `guides/`
+directory; the range and the eight-space indent are in the table and in `source`):
+
+```sh
+sed -n '15,50p' "$G/wide-ep/router/wide-ep.values.yaml" | sed 's/^        //' | diff - reference-configs/guides/wide-ep.yaml
+```
 
 ## What round-robin does
 
@@ -144,11 +195,11 @@ From a checkout of this repository, with the Go toolchain `go.mod` names:
 
 ```sh
 go test ./cmd/epp/runner/ -run 'ReferenceConfigsLoad|LoaderRefuses|PDSampleIsThe|BuiltInDefault|IndexKnobs|IndexSeparates|RoundRobinOutside'
-go test ./pkg/embed/ -run 'RoundRobin|RandomPickerFiles|LeastActive|TestDefault|TestPDSample|TestKnobMoves|TestIneffective|TestPrefixMatchProducer|TestMaxNum'
+go test ./pkg/embed/ -run 'RoundRobin|RandomPickerFiles|LeastActive|TestDefault|TestPDSample|TestKnobMoves|TestIneffective|TestPrefixMatchProducer|TestMaxNum|TestGuide'
 ```
 
 Expected: `ok` for both, in about a second each. The first loads every indexed file through the
-runner's own start-up path (phase one and two, experimental plugins refused), compares the
+runner's own start-up path (phase one and two, experimental plugins refused unless the index says a file needs them), compares the
 built-in default with `default.yaml` plugin for plugin and weight for weight, and checks the index
 against the files. The second gives each file to the hosted router with a deterministic runtime
 (`embedtest.NewRuntime(1)`) and routes requests: role filters hold, `least-active-requests` sends

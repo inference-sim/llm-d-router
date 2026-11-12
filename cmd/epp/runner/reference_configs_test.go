@@ -72,6 +72,9 @@ type refIndex struct {
 			Colocated *string `json:"colocated"`
 			PD        *string `json:"pd"`
 		} `json:"files"`
+		Requires struct {
+			EPPFlags []string `json:"epp_flags"`
+		} `json:"requires"`
 		Knobs                 []refKnob `json:"knobs"`
 		IneffectiveParameters []refKnob `json:"ineffective_parameters"`
 		PDDecider             *struct {
@@ -118,13 +121,20 @@ func readRef(t *testing.T, name string) string {
 // made, and the effective configuration after the router's own defaults are applied.
 func load(t *testing.T, configText string) (*Runner, *configapiv1.EndpointPickerConfig, error) {
 	t.Helper()
+	return loadWith(t, configText, false)
+}
+
+// loadWith is load with --allow-experimental-plugins set or not.
+func loadWith(t *testing.T, configText string, experimental bool) (*Runner, *configapiv1.EndpointPickerConfig, error) {
+	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	opts := runserver.NewOptions()
 	opts.ConfigText = configText
 	opts.PoolName = "reference-config-pool"
-	// Reference configurations must load on a default command line.
-	opts.AllowExperimentalPlugins = false
+	// Reference configurations load on a default command line, except the ones that say in
+	// requires.epp_flags that they need the experimental flag.
+	opts.AllowExperimentalPlugins = experimental
 	r := NewRunner()
 	rawConfig, err := r.parseConfigurationPhaseOne(ctx, opts)
 	if err != nil {
@@ -158,23 +168,35 @@ func effective(t *testing.T, r *Runner, cfg *configapiv1.EndpointPickerConfig) s
 }
 
 // TestReferenceConfigsLoad: every file the index offers is accepted, unchanged, by the router's
-// own configuration loader on a default command line, and the directory holds no other file.
+// own configuration loader on the command line the index says it needs (a default one unless
+// requires.epp_flags names --allow-experimental-plugins, and then the file is refused without
+// it), and the directories hold no other file.
 func TestReferenceConfigsLoad(t *testing.T) {
 	idx := readIndex(t)
 	offered := map[string]bool{}
 	for _, p := range idx.Policies {
+		needsExperimental := slices.Contains(p.Requires.EPPFlags, "--allow-experimental-plugins")
 		for shape, name := range files(p.Files) {
 			offered[name] = true
 			t.Run(p.Name+"/"+shape, func(t *testing.T) {
-				_, _, err := load(t, readRef(t, name))
+				_, _, err := loadWith(t, readRef(t, name), needsExperimental)
 				require.NoError(t, err, "%s no longer loads", name)
+				if needsExperimental {
+					_, _, err := load(t, readRef(t, name))
+					require.Error(t, err, "%s loads without --allow-experimental-plugins, but the index says it needs it", name)
+				}
 			})
 		}
 	}
 	onDisk, err := filepath.Glob(filepath.Join(referenceConfigs, "*.yaml"))
 	require.NoError(t, err)
+	guides, err := filepath.Glob(filepath.Join(referenceConfigs, "guides", "*.yaml"))
+	require.NoError(t, err)
+	onDisk = append(onDisk, guides...)
 	for _, f := range onDisk {
-		require.True(t, offered[filepath.Base(f)], "%s is not in policies.json", f)
+		rel, err := filepath.Rel(referenceConfigs, f)
+		require.NoError(t, err)
+		require.True(t, offered[filepath.ToSlash(rel)], "%s is not in policies.json", f)
 	}
 	require.Len(t, onDisk, len(offered), "policies.json names a file that is not in the directory")
 }
