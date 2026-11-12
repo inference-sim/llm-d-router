@@ -78,7 +78,7 @@ func (c *Screener) Screen(ctx context.Context, request *fwksched.InferenceReques
 	// request in P/D must use the revision stamped by prefill; it must not depend
 	// on the two EPPs sharing a CrossReplicaSyncer.
 	if chosenRevision == "" {
-		chosenRevision = pickWeightedRevision(shares, hosting.From(ctx).Rand("disaggregatedset-rollout-screener").Float64())
+		chosenRevision = pickWeightedRevision(shares, hosting.From(ctx).Rand("disaggregatedset-rollout-screener").Float64(), hosting.From(ctx).Hosted())
 		if decisionID := revisionDecisionID(request); distribution.needsCoordination && decisionID != "" && chosenRevision != "" {
 			var err error
 			chosenRevision, err = c.getOrSetRevision(ctx, decisionID, chosenRevision)
@@ -195,18 +195,19 @@ func revisionSumWeight(perRole map[string]int, required []string) (int, bool) {
 	return weight, true
 }
 
-func pickWeightedRevision(shares map[string]float64, draw float64) string {
+func pickWeightedRevision(shares map[string]float64, draw float64, hosted bool) string {
 	revisions := make([]string, 0, len(shares))
-	for revision := range shares {
-		revisions = append(revisions, revision)
-	}
-	sort.Strings(revisions)
 	total := 0.0
-	for _, revision := range revisions {
-		total += shares[revision]
+	for revision, share := range shares {
+		revisions = append(revisions, revision)
+		total += share
 	}
 	if total == 0 {
 		return ""
+	}
+	sort.Strings(revisions)
+	if hosted {
+		total = sortedTotal(shares, revisions)
 	}
 	if len(revisions) == 1 {
 		return revisions[0]

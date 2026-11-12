@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sort"
 	"strconv"
 	"testing"
 
@@ -399,11 +400,77 @@ func TestRevisionModesCacheExpectedShares(t *testing.T) {
 
 func TestPickWeightedRevision(t *testing.T) {
 	shares := map[string]float64{"v1": 0.75, "v2": 0.25}
-	if got := pickWeightedRevision(shares, 0); got != "v1" {
+	if got := pickWeightedRevision(shares, 0, true); got != "v1" {
 		t.Fatalf("draw 0 selected %q, want v1", got)
 	}
-	if got := pickWeightedRevision(shares, 0.9); got != "v2" {
+	if got := pickWeightedRevision(shares, 0.9, true); got != "v2" {
 		t.Fatalf("draw 0.9 selected %q, want v2", got)
+	}
+}
+
+// upstreamPickWeightedRevision is the helper as upstream llm-d-router v1.0.0 has it: the total is
+// summed in Go map order.
+func upstreamPickWeightedRevision(shares map[string]float64, draw float64) string {
+	revisions := make([]string, 0, len(shares))
+	total := 0.0
+	for revision, share := range shares {
+		revisions = append(revisions, revision)
+		total += share
+	}
+	if total == 0 {
+		return ""
+	}
+	sort.Strings(revisions)
+	if len(revisions) == 1 {
+		return revisions[0]
+	}
+	x := draw * total
+	cumulative := 0.0
+	for _, revision := range revisions {
+		cumulative += shares[revision]
+		if x < cumulative {
+			return revision
+		}
+	}
+	return revisions[len(revisions)-1]
+}
+
+// TestPickWeightedRevisionSumOrderFollowsTheRuntime: the order in which shares are summed can move
+// a draw that lies on a cumulative boundary. The shares 0.1, 0.2 and 0.3 sum to 0.6000000000000001
+// in sorted order and to 0.5999999999999999 when the map walk starts at v2, and the draw 1/6 puts
+// x = draw * total on either side of the first cumulative share (0.1) accordingly. Not hosted, the
+// fork must keep upstream's map-order sum: its answers are exactly the answers upstream gives, and
+// both occur. Hosted, the sum is in sorted order, so every run gives the same answer.
+func TestPickWeightedRevisionSumOrderFollowsTheRuntime(t *testing.T) {
+	shares := map[string]float64{"v1": 0.1, "v2": 0.2, "v3": 0.3}
+	const draw = 1.0 / 6
+
+	sortedSum := (shares["v1"] + shares["v2"]) + shares["v3"]
+	rotatedSum := (shares["v2"] + shares["v3"]) + shares["v1"]
+	if sortedSum == rotatedSum {
+		t.Fatalf("the vector does not exercise summation order: both sums are %v", sortedSum)
+	}
+
+	const runs = 4000
+	upstream, notHosted, hosted := map[string]int{}, map[string]int{}, map[string]int{}
+	for i := 0; i < runs; i++ {
+		upstream[upstreamPickWeightedRevision(shares, draw)]++
+		notHosted[pickWeightedRevision(shares, draw, false)]++
+		hosted[pickWeightedRevision(shares, draw, true)]++
+	}
+	if len(upstream) != 2 {
+		t.Fatalf("upstream's map-order sum should give both answers on this vector; got %v", upstream)
+	}
+	if len(notHosted) != 2 {
+		t.Errorf("not hosted must keep upstream's map-order sum and so give both answers %v; got %v", upstream, notHosted)
+	}
+	for revision := range notHosted {
+		if upstream[revision] == 0 {
+			t.Errorf("not hosted chose %q, which upstream never chooses on this vector (%v)", revision, upstream)
+		}
+	}
+	if len(hosted) != 1 {
+		t.Errorf("hosted runs with the same draw must agree; got %v", hosted)
 	}
 }
 
