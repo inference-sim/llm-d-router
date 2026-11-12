@@ -58,6 +58,9 @@ var audited = map[string]bool{
 	"topology-stamp-handler":           true,
 	// its exploration draw is the runtime's; hostingRefusal refuses the latency-predictor TTFT source
 	"prefix-cache-affinity-filter": true,
+	// a pure function of the scraped metrics and the in-flight count: no clock, goroutine, draw or
+	// map walk (the hosting-lint baseline holds no entry under filter/utilization)
+	"utilization-filter": true,
 	// scorers
 	"queue-scorer":                 true,
 	"kv-cache-utilization-scorer":  true,
@@ -131,7 +134,6 @@ var hostingReasons = map[string]string{
 	"k8s-notification-source":           "it needs a Kubernetes controller manager",
 	"k8s-peer-discovery":                "it needs a Kubernetes API server",
 	"disaggregatedset-rollout-screener": "its revision split draws from process-wide randomness",
-	"utilization-filter":                "it has not been audited for the hosting runtime",
 	"request-attribute-reporter":        "it has not been audited for the hosting runtime",
 }
 
