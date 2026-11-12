@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -48,9 +49,30 @@ type indexKnob struct {
 	AppliesTo string `json:"applies_to"`
 }
 
+// poolSpec is what an indexed file needs from the scenario (the index's requires block).
+type poolSpec struct {
+	Flags  []string                     `json:"epp_flags"`
+	Labels map[string]map[string]string `json:"pod_labels"`
+	Model  string                       `json:"model"`
+}
+
+// flags are the EPP flags of the standalone pool plus the ones the file requires.
+func (s poolSpec) flags() []string { return append(slices.Clone(s.Flags), defaultFlags...) }
+
+// env is what a scenario runs in: the shape of the pool, the roles whose decisions matter and
+// what the file requires of the pods.
+type env struct {
+	pd    bool
+	roles []string
+	spec  poolSpec
+}
+
+func specOf(p indexPolicy) poolSpec { return p.Requires }
+
 type indexPolicy struct {
-	Name  string `json:"name"`
-	Files struct {
+	Name     string   `json:"name"`
+	Requires poolSpec `json:"requires"`
+	Files    struct {
 		Colocated *string `json:"colocated"`
 		PD        *string `json:"pd"`
 	} `json:"files"`
@@ -158,11 +180,14 @@ type kpool struct {
 	eps   map[string][]string // the endpoints of each role, "first" first
 }
 
-func newKnobPool(t *testing.T, cfg string, pd bool) *kpool {
+func newKnobPool(t *testing.T, cfg string, e env) *kpool {
 	t.Helper()
 	st := &knobState{waiting: map[string]int{}, kv: map[string]float64{}}
 	rt := embedtest.NewRuntime(1)
 	rt.Engines = func(r *http.Request) (*http.Response, error) {
+		if strings.HasSuffix(r.URL.Path, "/v1/completions/render") {
+			return renderEngines(r)
+		}
 		h := r.URL.Hostname()
 		body := fmt.Sprintf("# TYPE vllm:num_requests_waiting gauge\nvllm:num_requests_waiting{model_name=\"m\"} %d\n"+
 			"# TYPE vllm:kv_cache_usage_perc gauge\nvllm:kv_cache_usage_perc{model_name=\"m\"} %g\n", st.waiting[h], st.kv[h])
@@ -171,23 +196,25 @@ func newKnobPool(t *testing.T, cfg string, pd bool) *kpool {
 		}
 		return embedtest.Respond(r, http.StatusOK, "text/plain", body), nil
 	}
-	r, err := New(context.Background(), rt, contract.Config{Flags: defaultFlags, Config: []byte(cfg)})
+	r, err := New(context.Background(), rt, contract.Config{Flags: e.spec.flags(), Config: []byte(cfg)})
 	if err != nil {
 		t.Fatalf("%v\n%s", err, cfg)
 	}
 	t.Cleanup(r.Stop)
-	p := &kpool{refPool: &refPool{t: t, rt: rt, r: r}, st: st, eps: map[string][]string{}}
+	p := &kpool{refPool: &refPool{t: t, rt: rt, r: r, model: e.spec.Model}, st: st, eps: map[string][]string{}}
 	add := func(role, ip, label string) {
 		labels := map[string]string{"llm-d.ai/inference-serving": "true"}
+		maps.Copy(labels, e.spec.Labels["all"])
 		if label != "" {
 			labels["llm-d.ai/role"] = label
+			maps.Copy(labels, e.spec.Labels[label])
 		}
 		if err := r.SetEndpoint(contract.Endpoint{Name: ip, IP: ip, Port: 8000, Labels: labels}, true); err != nil {
 			t.Fatal(err)
 		}
 		p.eps[role] = append(p.eps[role], ip)
 	}
-	if pd {
+	if e.pd {
 		p.roles = []string{"prefill", "decode"}
 		add("prefill", "10.0.1.1", "prefill")
 		add("prefill", "10.0.1.2", "prefill")
@@ -254,25 +281,25 @@ func (p *kpool) chosenBy(n int, roles []string) string {
 }
 
 // scenario drives one knob: it returns a description of the decisions it made.
-type scenario func(t *testing.T, cfg string, pd bool, roles []string) string
+type scenario func(t *testing.T, cfg string, e env) string
 
 // queueScenario: the first endpoint of every role reports a queue of 3 (above 5 the router's
 // saturation detector would drop the endpoint whatever the scorers say).
-func queueScenario(t *testing.T, cfg string, pd bool, roles []string) string {
-	p := newKnobPool(t, cfg, pd)
+func queueScenario(t *testing.T, cfg string, e env) string {
+	p := newKnobPool(t, cfg, e)
 	p.loadFirst(3, false)
-	return p.chosenBy(40, orRoles(roles, p.roles))
+	return p.chosenBy(40, orRoles(e.roles, p.roles))
 }
 
 // kvScenario: the first endpoint of every role reports a half-full KV cache (the router's
 // saturation detector drops an endpoint above 0.8).
-func kvScenario(t *testing.T, cfg string, pd bool, roles []string) string {
-	p := newKnobPool(t, cfg, pd)
+func kvScenario(t *testing.T, cfg string, e env) string {
+	p := newKnobPool(t, cfg, e)
 	for _, eps := range p.eps {
 		p.st.kv[eps[0]] = 0.5
 	}
 	p.settle()
-	return p.chosenBy(40, orRoles(roles, p.roles))
+	return p.chosenBy(40, orRoles(e.roles, p.roles))
 }
 
 func orRoles(roles, all []string) []string {
@@ -285,9 +312,9 @@ func orRoles(roles, all []string) []string {
 // followScenario: 12 prompts, each sent twice (the second time with a fresh tail in a P/D pool,
 // so that it is disaggregated again); counts how often the second request takes the first one's
 // endpoint of the role.
-func followScenario(t *testing.T, cfg string, pd bool, roles []string) string {
-	p := newKnobPool(t, cfg, pd)
-	role := orRoles(roles, p.roles)[len(orRoles(roles, p.roles))-1]
+func followScenario(t *testing.T, cfg string, e env) string {
+	p := newKnobPool(t, cfg, e)
+	role := orRoles(e.roles, p.roles)[len(orRoles(e.roles, p.roles))-1]
 	same := 0
 	for i := 0; i < 12; i++ {
 		a := longPrompt(i, 300)
@@ -307,8 +334,8 @@ func followScenario(t *testing.T, cfg string, pd bool, roles []string) string {
 // partialScenario: 12 prompts, each followed by one that shares only its first 128 tokens; counts
 // how often the second takes the endpoint of the first.
 func partialScenario(st func(*knobState)) scenario {
-	return func(t *testing.T, cfg string, pd bool, roles []string) string {
-		p := newKnobPool(t, cfg, pd)
+	return func(t *testing.T, cfg string, e env) string {
+		p := newKnobPool(t, cfg, e)
 		if st != nil {
 			st(p.st)
 			p.settle()
@@ -332,8 +359,8 @@ func partialScenario(st func(*knobState)) scenario {
 // The query is the decision under test: which endpoints it takes depends on how the prefix score
 // of the cached endpoint weighs against the queue score of the idle one.
 func holderScenario(query func(seed []int) []int) scenario {
-	return func(t *testing.T, cfg string, pd bool, roles []string) string {
-		p := newKnobPool(t, cfg, pd)
+	return func(t *testing.T, cfg string, e env) string {
+		p := newKnobPool(t, cfg, e)
 		seed := longPrompt(1, 256)
 		p.loadFirst(100, true)
 		p.route(seed, false)
@@ -352,8 +379,8 @@ var (
 // heldScenario: one request is held in flight, then 20 completed ones follow; counts how many
 // took the held request's endpoint in each role.
 func heldScenario(prompt []int) scenario {
-	return func(t *testing.T, cfg string, pd bool, roles []string) string {
-		p := newKnobPool(t, cfg, pd)
+	return func(t *testing.T, cfg string, e env) string {
+		p := newKnobPool(t, cfg, e)
 		held, _ := p.route(prompt, true)
 		onHeld := map[string]int{}
 		for i := 0; i < 20; i++ {
@@ -374,8 +401,8 @@ func heldScenario(prompt []int) scenario {
 
 // busyScenario: three requests are held (two endpoints end up with 2 and 1), then 20 completed
 // ones follow; counts how many took the endpoint holding 2, per role.
-func busyScenario(t *testing.T, cfg string, pd bool, roles []string) string {
-	p := newKnobPool(t, cfg, pd)
+func busyScenario(t *testing.T, cfg string, e env) string {
+	p := newKnobPool(t, cfg, e)
 	count := map[string]map[string]int{}
 	for i := 0; i < 3; i++ {
 		d, _ := p.route(longPrompt(700+i, 40), true)
@@ -411,8 +438,8 @@ func busyScenario(t *testing.T, cfg string, pd bool, roles []string) string {
 }
 
 // disaggScenario: 6 new 600-token prompts; counts how many the decider sends to a prefill endpoint.
-func disaggScenario(t *testing.T, cfg string, pd bool, roles []string) string {
-	p := newKnobPool(t, cfg, pd)
+func disaggScenario(t *testing.T, cfg string, e env) string {
+	p := newKnobPool(t, cfg, e)
 	n := 0
 	for i := 0; i < 6; i++ {
 		if d, _ := p.route(longPrompt(i, 600), false); d.Prefill != "" {
@@ -420,6 +447,60 @@ func disaggScenario(t *testing.T, cfg string, pd bool, roles []string) string {
 		}
 	}
 	return fmt.Sprintf("%d of 6 disaggregated", n)
+}
+
+// seedEvents tells the router, as the engines would, that the first endpoint of every role holds
+// the blocks of the prompt (the precise producer indexes KV events, not routed requests).
+func (p *kpool) seedEvents(prompt []int) {
+	tokens := make([]uint32, len(prompt))
+	hashes := make([]uint64, len(prompt)/64)
+	for i := range tokens {
+		tokens[i] = uint32(prompt[i])
+	}
+	for i := range hashes {
+		hashes[i] = uint64(9000 + i)
+	}
+	for _, role := range p.roles {
+		ev := contract.BlockStored{Hashes: hashes, Tokens: tokens[:len(hashes)*64], BlockSize: 64}
+		if err := p.r.IngestKVEvents(context.Background(), p.eps[role][0]+":8000", p.model, contract.KVBatch{Timestamp: embedtest.Epoch, Events: []contract.KVEvent{ev}}); err != nil {
+			p.t.Fatal(err)
+		}
+	}
+	p.settle()
+}
+
+// affinityScenario: a 2000-token prompt X is cached on one endpoint (by a routed request, or by KV
+// events when events is set); a long request that extends X is held in flight there; then a query
+// that extends X by 100 tokens is routed. It reports whether the query stayed on the endpoint that
+// holds X, which is what the prefix-cache-affinity-filter decides: it keeps the cached endpoint
+// unless the estimated TTFT penalty of its in-flight tokens is too large.
+func affinityScenario(events bool, stateOf func(*knobState)) scenario {
+	return func(t *testing.T, cfg string, e env) string {
+		p := newKnobPool(t, cfg, e)
+		if stateOf != nil {
+			stateOf(p.st)
+			p.settle()
+		}
+		role := p.roles[0]
+		x := longPrompt(1, 2000)
+		var cached string
+		if events {
+			p.seedEvents(x)
+			cached = p.eps[role][0]
+		} else {
+			first, _ := p.route(x, false)
+			cached = pick(first, role)
+		}
+		held, _ := p.route(append(slices.Clone(x), longPrompt(2, 6000)...), true)
+		if pick(held, role) != cached {
+			return fmt.Sprintf("the extending request left %s for %s", cached, pick(held, role))
+		}
+		q, _ := p.route(append(slices.Clone(x), longPrompt(3, 100)...), false)
+		if pick(q, role) == cached {
+			return "the query stays on the cached endpoint"
+		}
+		return "the query leaves the cached endpoint"
+	}
 }
 
 // variant is the two settings of a knob a test compares.
@@ -464,6 +545,7 @@ var knobTests = map[string]knobTest{
 	"weight.prefix-cache-scorer":              {variant{"0", weight(prefixScorer, "", 0)}, variant{"10", weight(prefixScorer, "", 10)}, followScenario},
 	"weight.prefill.prefix-cache-scorer":      {variant{"0", weight(prefixScorer, "prefill", 0)}, variant{"10", weight(prefixScorer, "prefill", 10)}, followScenario},
 	"weight.decode.prefix-cache-scorer":       {variant{"0", weight(prefixScorer, "decode", 0)}, variant{"10", weight(prefixScorer, "decode", 10)}, followScenario},
+	"weight.prefill.active-request-scorer":    {variant{"0", weight("active-request-scorer", "prefill", 0)}, variant{"10", weight("active-request-scorer", "prefill", 10)}, heldScenario(longPrompt(3, 40))},
 	"weight.active-request-scorer":            {variant{"0", weight("active-request-scorer", "", 0)}, variant{"1", weight("active-request-scorer", "", 1)}, heldScenario(longPrompt(3, 40))},
 	"active-request-scorer.idleThreshold":     {variant{"0", param("active-request-scorer", "idleThreshold", 0)}, variant{"1", param("active-request-scorer", "idleThreshold", 1)}, heldScenario(longPrompt(3, 40))},
 	"active-request-scorer.maxBusyScore":      {variant{"1", param("active-request-scorer", "maxBusyScore", 1.0)}, variant{"0", param("active-request-scorer", "maxBusyScore", 0.0)}, busyScenario},
@@ -480,6 +562,37 @@ var knobTests = map[string]knobTest{
 		partialScenario(func(st *knobState) { st.block = 256 })},
 }
 
+// affinityTests move the knobs of the guides' files, whose prefill (or only) profile gates on
+// the prefix-cache-affinity-filter instead of scoring the prefix: the scenario caches a prompt on
+// one endpoint, holds a long request that extends it there, and asks whether a query that extends
+// it stays. The producer is the approximate one (the routed prompt is cached) or the precise one
+// (the engines' KV events say so).
+func affinityTests(events bool) map[string]knobTest {
+	f := "prefix-cache-affinity-filter"
+	return map[string]knobTest{
+		f + ".peakPrefillThroughput":     {variant{"1000000", param(f, "peakPrefillThroughput", 1000000)}, variant{"100", param(f, "peakPrefillThroughput", 100)}, affinityScenario(events, nil)},
+		f + ".maxTTFTPenaltyMs":          {variant{"18000", param(f, "maxTTFTPenaltyMs", 18000)}, variant{"1", param(f, "maxTTFTPenaltyMs", 1)}, affinityScenario(events, nil)},
+		f + ".affinityThreshold":         {variant{"0.8", param(f, "affinityThreshold", 0.8)}, variant{"0.99", param(f, "affinityThreshold", 0.99)}, affinityScenario(events, nil)},
+		f + ".explorationProbability":    {variant{"0", param(f, "explorationProbability", 0)}, variant{"1", param(f, "explorationProbability", 1)}, affinityScenario(events, nil)},
+		approx + ".lruCapacityPerServer": {variant{"31250", param(approx, "lruCapacityPerServer", 31250)}, variant{"1", param(approx, "lruCapacityPerServer", 1)}, affinityScenario(false, nil)},
+		approx + ".blockSizeTokens":      {variant{"64", param(approx, "blockSizeTokens", 64)}, variant{"1024", param(approx, "blockSizeTokens", 1024)}, affinityScenario(false, nil)},
+		approx + ".autoTune": {variant{"false", all(param(approx, "autoTune", false), param(approx, "blockSizeTokens", 64))}, variant{"true", param(approx, "autoTune", true)},
+			affinityScenario(false, func(st *knobState) { st.block = 1024 })},
+	}
+}
+
+// knobTestFor finds the scenario for a knob in a file: the guides' affinity files use the
+// affinity scenarios, the others the table above.
+func knobTestFor(id, cfg string) (knobTest, bool) {
+	if strings.Contains(cfg, "prefix-cache-affinity-filter") {
+		if kt, ok := affinityTests(strings.Contains(cfg, "precise-prefix-cache-producer"))[id]; ok {
+			return kt, true
+		}
+	}
+	kt, ok := knobTests[id]
+	return kt, ok
+}
+
 // TestKnobMovesAHostedDecision: every knob the index lists changes what the hosted router
 // decides when moved, in every file of its policy that carries it. The router runs over stub
 // engines whose queue, KV usage and cache block size the scenario sets; the two settings of a
@@ -487,20 +600,20 @@ var knobTests = map[string]knobTest{
 func TestKnobMovesAHostedDecision(t *testing.T) {
 	for _, pol := range readPolicies(t) {
 		for _, k := range pol.Knobs {
-			kt, ok := knobTests[k.ID]
 			for shape, file := range pol.shapes(k) {
 				t.Run(pol.Name+"/"+shape+"/"+k.ID, func(t *testing.T) {
+					text := refConfig(t, file)
+					kt, ok := knobTestFor(k.ID, text)
 					if !ok {
 						t.Fatalf("the index lists %s as a knob and no hosted test moves it", k.ID)
 					}
-					text := refConfig(t, file)
 					run := func(v variant) string {
 						cfg := edit(t, text, func(doc map[string]any) { v.set(t, doc) })
 						var roles []string
 						if k.Profile != "" {
 							roles = []string{k.Profile}
 						}
-						return kt.watch(t, cfg, shape == "pd", roles)
+						return kt.watch(t, cfg, env{pd: shape == "pd", roles: roles, spec: specOf(pol)})
 					}
 					got := [2]string{run(kt.a), run(kt.b)}
 					if got[0] == got[1] {
@@ -558,8 +671,8 @@ func TestIneffectiveParametersLeaveTheDecisionAlone(t *testing.T) {
 						t.Fatalf("the index lists %s as ineffective and no hosted test shows it", k.ID)
 					}
 					text := refConfig(t, file)
-					without := it.watch(t, text, shape == "pd", nil)
-					with := it.watch(t, edit(t, text, func(doc map[string]any) { it.set(t, doc) }), shape == "pd", nil)
+					without := it.watch(t, text, env{pd: shape == "pd", spec: specOf(pol)})
+					with := it.watch(t, edit(t, text, func(doc map[string]any) { it.set(t, doc) }), env{pd: shape == "pd", spec: specOf(pol)})
 					if with != without {
 						t.Errorf("%s changed the decisions:\n without: %s\n with:    %s", k.ID, without, with)
 					}
@@ -583,7 +696,7 @@ func TestPrefixMatchProducerNameSelectsOnly(t *testing.T) {
 // TestMaxNumOfEndpointsAboveOneStillGivesOneEndpoint: the decision carries one endpoint.
 func TestMaxNumOfEndpointsAboveOneStillGivesOneEndpoint(t *testing.T) {
 	cfg := edit(t, refConfig(t, "round-robin.yaml"), func(doc map[string]any) { setParam(doc, "max-score-picker", "maxNumOfEndpoints", 3) })
-	p := newKnobPool(t, cfg, false)
+	p := newKnobPool(t, cfg, env{})
 	for i := 0; i < 10; i++ {
 		d, _ := p.route(longPrompt(i, 40), false)
 		if strings.Contains(d.Endpoint, ",") {

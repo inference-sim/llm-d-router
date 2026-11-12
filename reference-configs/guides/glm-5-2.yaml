@@ -1,0 +1,45 @@
+apiVersion: llm-d.ai/v1
+kind: EndpointPickerConfig
+plugins:
+# Pin each request to a single DisaggregatedSet revision during
+# rollouts so prefill and decode never pair across revisions.
+- type: disaggregatedset-rollout-screener
+  parameters:
+    scope:
+      labelSelector: "disaggregatedset.x-k8s.io/name=wide-ep-vllm-glm-5-2"
+    revisionGating:
+      mode: max-role
+      requiredRoles: [prefill, decode]
+- type: always-disagg-pd-decider
+- type: disagg-profile-handler
+  parameters:
+    deciders:
+      prefill: always-disagg-pd-decider
+- type: prefill-filter
+- type: decode-filter
+- type: approx-prefix-cache-producer
+- type: inflight-load-producer
+- type: prefix-cache-affinity-filter
+  parameters:
+    # Measured on an H200 GLM-5.2-FP8 DP8 cell. Re-measure for other
+    # hardware or models (guides/recipes/router/calibration).
+    peakPrefillThroughput: 3585
+- type: token-load-scorer
+- type: active-request-scorer
+- type: max-score-picker
+schedulingProfiles:
+# Prefill does the prompt pass: keep prefix groups on cache-warm ranks
+# (affinity filter) and pick by queued prefill token load.
+- name: prefill
+  plugins:
+  - pluginRef: prefill-filter
+  - pluginRef: prefix-cache-affinity-filter
+  - pluginRef: token-load-scorer
+  - pluginRef: max-score-picker
+# Pure decode is bound by concurrent in-flight requests, not prefill
+# throughput: pick the least-busy endpoint.
+- name: decode
+  plugins:
+  - pluginRef: decode-filter
+  - pluginRef: active-request-scorer
+  - pluginRef: max-score-picker

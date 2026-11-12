@@ -1,0 +1,81 @@
+apiVersion: llm-d.ai/v1
+kind: EndpointPickerConfig
+plugins:
+- type: disaggregatedset-rollout-screener
+  parameters:
+    scope:
+      labelSelector: "disaggregatedset.x-k8s.io/name=wide-ep-vllm-glm-5-2"
+    revisionGating:
+      mode: max-role
+      requiredRoles: [prefill, decode]
+- type: always-disagg-pd-decider
+- type: disagg-profile-handler
+  parameters:
+    deciders:
+      prefill: always-disagg-pd-decider
+- type: prefill-filter
+- type: decode-filter
+- type: token-producer
+  parameters:
+    # Must match the deployed model: render calls land on the model
+    # servers themselves, so a mismatch is rejected rather than
+    # silently producing token IDs from the wrong tokenizer.
+    modelName: zai-org/GLM-5.2-FP8
+    vllm:
+      url: http://wide-ep-render:8000
+- type: endpoint-notification-source
+- type: precise-prefix-cache-producer
+  parameters:
+    indexerConfig:
+      kvBlockIndexConfig:
+        inMemoryConfig:
+          # Per-key LRU of (endpoint, tier) holders. Size to at least
+          # endpoints x tiers or real holders evict and affinity
+          # silently zeroes.
+          podCacheSize: 128
+      # Device-tier scoring weights: a CPU-tier hit counts 0.4 of a
+      # GPU-tier hit. Only relevant when an offloading component adds
+      # a CPU tier.
+      kvCacheBackendConfigs:
+      - name: gpu
+        weight: 1.0
+      - name: cpu
+        weight: 0.4
+    tokenProcessorConfig:
+      # Must equal the engines' KV_BLOCK_SIZE (kv-events component).
+      blockSizeTokens: 64
+    kvEventsConfig:
+      topicFilter: "kv@"
+      discoverPods: true
+      podDiscoveryConfig:
+        socketPort: 5557
+- type: inflight-load-producer
+  parameters:
+    prefixMatchInfoProducerName: precise-prefix-cache-producer
+- type: prefix-cache-affinity-filter
+  parameters:
+    prefixMatchInfoProducerName: precise-prefix-cache-producer
+    inFlightLoadProducerName: inflight-load-producer
+    # Measured on an H200 GLM-5.2-FP8 DP8 cell. Re-measure for other
+    # hardware or models (guides/recipes/router/calibration).
+    peakPrefillThroughput: 3585
+- type: token-load-scorer
+- type: active-request-scorer
+- type: max-score-picker
+dataLayer:
+  sources:
+  - pluginRef: endpoint-notification-source
+    extractors:
+    - pluginRef: precise-prefix-cache-producer
+schedulingProfiles:
+- name: prefill
+  plugins:
+  - pluginRef: prefill-filter
+  - pluginRef: prefix-cache-affinity-filter
+  - pluginRef: token-load-scorer
+  - pluginRef: max-score-picker
+- name: decode
+  plugins:
+  - pluginRef: decode-filter
+  - pluginRef: active-request-scorer
+  - pluginRef: max-score-picker
