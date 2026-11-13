@@ -1,0 +1,11 @@
+# random-picker, one pool of colocated endpoints.
+# Derived from the frozen stable configuration of the random picker
+# (test/testdata/plugins/stable/v1/random-picker.yaml) without the parameters the router defaults.
+apiVersion: llm-d.ai/v1
+kind: EndpointPickerConfig
+plugins:
+- type: random-picker
+schedulingProfiles:
+- name: default
+  plugins:
+  - pluginRef: random-picker

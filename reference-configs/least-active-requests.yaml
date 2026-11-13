@@ -1,0 +1,14 @@
+# least-active-requests, one pool of colocated endpoints.
+# The active-request scorer scores an endpoint by its in-flight request count, read from the
+# inflight-load-producer; the endpoint with the fewest wins at the max-score picker.
+apiVersion: llm-d.ai/v1
+kind: EndpointPickerConfig
+plugins:
+- type: inflight-load-producer
+- type: active-request-scorer
+- type: max-score-picker
+schedulingProfiles:
+- name: default
+  plugins:
+  - pluginRef: active-request-scorer
+  - pluginRef: max-score-picker

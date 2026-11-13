@@ -1,0 +1,26 @@
+# least-active-requests, prefill and decode pools (P/D). Same shape as round-robin-pd.yaml with
+# the active-request scorer in both profiles.
+apiVersion: llm-d.ai/v1
+kind: EndpointPickerConfig
+plugins:
+- type: inflight-load-producer
+- type: active-request-scorer
+- type: prefill-filter
+- type: decode-filter
+- type: max-score-picker
+- type: always-disagg-pd-decider
+- type: disagg-profile-handler
+  parameters:
+    deciders:
+      prefill: always-disagg-pd-decider
+schedulingProfiles:
+- name: prefill
+  plugins:
+  - pluginRef: prefill-filter
+  - pluginRef: active-request-scorer
+  - pluginRef: max-score-picker
+- name: decode
+  plugins:
+  - pluginRef: decode-filter
+  - pluginRef: active-request-scorer
+  - pluginRef: max-score-picker

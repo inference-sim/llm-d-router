@@ -83,6 +83,7 @@ type Router struct {
 	kube     client.Client
 	pods     *controller.PodReconciler
 	kvIngest []*preciseprefixcache.Producer // in name order
+	podGuard []podGuard                     // in name order
 
 	endpoints map[string]*corev1.Pod
 	flights   map[string]*flight // undecided and dispatched requests, by request ID
@@ -99,7 +100,7 @@ type Router struct {
 //     --pool-name names, or the standalone pool of --endpoint-selector.
 //  3. Call cfg.Check with the Requirements and Pool, and return its error as is.
 //  4. Refuse configurations the hosting cannot run: a topology form that needs a coordinator, a
-//     render backend that discovers endpoints, a Redis or cost-aware KV index
+//     render backend that probes model limits, a Redis or cost-aware KV index
 //     ("the router configuration cannot be simulated faithfully: ...").
 //  5. Assemble the router ("llm-d router: ..."). Each plugin type is refused before its
 //     constructor runs, with an error wrapping an *embed.RefusalError: a type the fork cannot
@@ -179,6 +180,7 @@ func (r *Router) build(opts *runserver.Options, pool *datalayer.EndpointPool, gk
 		return err
 	}
 	r.kvIngest = kvIngesters(emb.Handle)
+	r.podGuard = podGuards(emb.Handle)
 	r.flowControl = flowControl(emb)
 	r.idleSkip = idleSkippable(emb)
 	r.server = handlers.NewStreamingServer(emb.Datastore, emb.Director, emb.Parsers, 0)
@@ -338,6 +340,9 @@ func (r *Router) SetEndpoint(ep contract.Endpoint, ready bool) error {
 	if ready {
 		status = corev1.ConditionTrue
 	}
+	if err := r.checkPod(ep.Name, ep.Labels); err != nil {
+		return err
+	}
 	pod, ok := r.endpoints[ep.Name]
 	if !ok {
 		pod = &corev1.Pod{
@@ -350,6 +355,9 @@ func (r *Router) SetEndpoint(ep contract.Endpoint, ready bool) error {
 			return fmt.Errorf("create pod %s: %w", ep.Name, err)
 		}
 		r.endpoints[ep.Name] = pod
+		if err := r.notifyPod(fwkdl.EventAddOrUpdate, pod); err != nil {
+			return err
+		}
 		return r.reconcilePod(pod, false)
 	}
 	matched := r.emb.Datastore.PoolLabelsMatch(pod.Labels)
@@ -372,6 +380,9 @@ func (r *Router) SetEndpoint(ep contract.Endpoint, ready bool) error {
 		if err := r.kube.Status().Update(r.ctx, pod); err != nil {
 			return fmt.Errorf("update pod status %s: %w", ep.Name, err)
 		}
+	}
+	if err := r.notifyPod(fwkdl.EventAddOrUpdate, pod); err != nil {
+		return err
 	}
 	return r.reconcilePod(pod, matched)
 }
@@ -403,7 +414,10 @@ func (r *Router) RemoveEndpoint(name string) error {
 	if err := r.kube.Delete(r.ctx, pod); err != nil {
 		return fmt.Errorf("delete pod %s: %w", name, err)
 	}
-	return r.reconcilePod(pod, matched)
+	if err := r.reconcilePod(pod, matched); err != nil {
+		return err
+	}
+	return r.notifyPod(fwkdl.EventDelete, pod)
 }
 
 // Stop implements embed.Router: it cancels every request the router holds, in request-ID order,

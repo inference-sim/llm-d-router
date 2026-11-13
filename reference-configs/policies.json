@@ -1,0 +1,349 @@
+{
+  "schema": 1,
+  "router": {
+    "repository": "inference-sim/llm-d-router",
+    "branch": "llm-d-r",
+    "upstream_release": "v1.0.0",
+    "upstream_base": "b9393d1a9f1d5a72ecd86f8d2b643ab54c2a9b92",
+    "fork_tag_before_this_change": "v1.0.0-blis.3",
+    "tested_from": "4bce4f8f2176eb62ce648feb411d8f1ac19b0790",
+    "config_api": "llm-d.ai/v1 EndpointPickerConfig",
+    "pin": "Pin the commit that carries this file. The tests in cmd/epp/runner and pkg/embed fail at any commit where a listed file stops being accepted or stops behaving as stated here."
+  },
+  "nearest_policy_names": ["round-robin", "random-picker", "least-active-requests", "default"],
+  "policies": [
+    {
+      "name": "default",
+      "summary": "The router's built-in configuration: queue-scorer 2, kv-cache-utilization-scorer 2, prefix-cache-scorer 3, max-score-picker.",
+      "built_in": "A router given no configuration runs exactly this; default.yaml is that configuration written as a file and a test shows the two give the same effective configuration.",
+      "files": {"colocated": "default.yaml", "pd": null},
+      "pd_note": "No P/D form exists. It has no prefill or decode profile, no role filter and no disaggregation handler, so in a pool that mixes roles it treats every endpoint as one pool and never names a prefill endpoint (test).",
+      "endpoint_choice": "Highest weighted score; endpoints with equal scores are tied (see round-robin for what a tie does).",
+      "source": ["pkg/epp/config/loader/defaults.go:48-105", "pkg/epp/config/loader/configloader.go:80-84"],
+      "knobs": [
+        {"id": "weight.queue-scorer", "kind": "scorer_weight", "plugin": "queue-scorer", "in_file": true, "file_value": 2, "router_default": 1.0, "source": "pkg/epp/config/loader/defaults.go:49,203", "hosted_effect": true},
+        {"id": "weight.kv-cache-utilization-scorer", "kind": "scorer_weight", "plugin": "kv-cache-utilization-scorer", "in_file": true, "file_value": 2, "router_default": 1.0, "source": "pkg/epp/config/loader/defaults.go:50,203", "hosted_effect": true},
+        {"id": "weight.prefix-cache-scorer", "kind": "scorer_weight", "plugin": "prefix-cache-scorer", "in_file": true, "file_value": 3, "router_default": 1.0, "source": "pkg/epp/config/loader/defaults.go:51,203", "hosted_effect": true},
+        {"id": "prefix-cache-scorer.matchLengthWeight", "kind": "plugin_parameter", "plugin": "prefix-cache-scorer", "parameter": "matchLengthWeight", "in_file": false, "file_value": "not stated", "router_default": 0.0, "range": "0.0 to 1.0", "source": "pkg/epp/framework/plugins/scheduling/scorer/prefix/plugin.go:64-66,72-75; README.md:44", "hosted_effect": true},
+        {"id": "prefix-cache-scorer.matchLengthScaleTokens", "kind": "plugin_parameter", "plugin": "prefix-cache-scorer", "parameter": "matchLengthScaleTokens", "in_file": false, "file_value": "not stated", "router_default": 8192, "source": "pkg/epp/framework/plugins/scheduling/scorer/prefix/plugin.go:67-68,72-75", "hosted_effect": true, "effective_when": "read only while matchLengthWeight is above 0 (scorer/prefix/plugin.go Config)"},
+        {"id": "approx-prefix-cache-producer.autoTune", "kind": "plugin_parameter", "plugin": "approx-prefix-cache-producer", "parameter": "autoTune", "in_file": false, "file_value": "not stated", "router_default": true, "note": "The producer is created by the router when no producer is configured (cmd/epp/runner/runner.go:749); a sweep that sets this adds the plugin to the file.", "source": "pkg/epp/framework/plugins/requestcontrol/dataproducer/approximateprefix/types.go:179", "hosted_effect": true},
+        {"id": "approx-prefix-cache-producer.blockSizeTokens", "kind": "plugin_parameter", "plugin": "approx-prefix-cache-producer", "parameter": "blockSizeTokens", "in_file": false, "file_value": "not stated", "router_default": 64, "note": "A value below 64 is raised to 64 at request time.", "source": "pkg/epp/framework/plugins/requestcontrol/dataproducer/approximateprefix/types.go:117-120; plugin.go:48-56,170-176", "hosted_effect": true},
+        {"id": "approx-prefix-cache-producer.maxPrefixTokensToMatch", "kind": "plugin_parameter", "plugin": "approx-prefix-cache-producer", "parameter": "maxPrefixTokensToMatch", "in_file": false, "file_value": "not stated", "router_default": 131072, "source": "pkg/epp/framework/plugins/requestcontrol/dataproducer/approximateprefix/types.go:131-135", "hosted_effect": true},
+        {"id": "approx-prefix-cache-producer.lruCapacityPerServer", "kind": "plugin_parameter", "plugin": "approx-prefix-cache-producer", "parameter": "lruCapacityPerServer", "in_file": false, "file_value": "not stated", "router_default": 31250, "source": "pkg/epp/framework/plugins/requestcontrol/dataproducer/approximateprefix/types.go:143-152", "hosted_effect": true},
+        {"id": "approx-prefix-cache-producer.maxPrefixBlocksToMatch", "kind": "plugin_parameter", "plugin": "approx-prefix-cache-producer", "parameter": "maxPrefixBlocksToMatch", "in_file": false, "file_value": "not stated", "router_default": 2048, "source": "pkg/epp/framework/plugins/requestcontrol/dataproducer/approximateprefix/types.go:122-129; plugin.go:408-422", "hosted_effect": true, "requires": [{"id": "approx-prefix-cache-producer.maxPrefixTokensToMatch", "value": 0}], "effective_when": "read only while maxPrefixTokensToMatch is 0 (resolveMaxBlocks); a sweep must set maxPrefixTokensToMatch to 0 in the same file. While the token cap is above 0, which is the router's default (131072) and pd-prefix-based's value (16384), this value is never read."}
+      ],
+      "ineffective_parameters": [
+        {"id": "picker.maxNumOfEndpoints", "kind": "plugin_parameter", "plugin": "max-score-picker", "parameter": "maxNumOfEndpoints", "in_file": false, "file_value": "not stated", "router_default": 1, "note": "The picker is added by the loader when the configuration names none.", "source": "pkg/epp/framework/plugins/scheduling/picker/common.go:38-45; pkg/epp/config/loader/defaults.go:181-197", "hosted_effect": false, "reason": "The router's picker would hand the gateway its best N endpoints; the hosted boundary keeps the first of the comma-separated list for the decode pick and for the prefill pick (pkg/embed/route.go decide: Endpoint and Prefill are element 0), and the embed contract carries one endpoint per decision. A value above 1 therefore changes nothing the host sees. The value 1 is the only modelled one."}
+      ]
+    },
+    {
+      "name": "round-robin",
+      "summary": "max-score-picker with no scorer in the profile.",
+      "files": {"colocated": "round-robin.yaml", "pd": "round-robin-pd.yaml"},
+      "endpoint_choice": "Every candidate has score 0, so all are tied. The picker rotates the tied candidates by a counter, but the candidates reach it in a seeded random order in a hosted runtime (pkg/epp/scheduling/scheduler_profile.go:363-370) and in Go map order otherwise (scheduler_profile.go:358-362). A rotation of a random order is a random order.",
+      "strict_per_request_rotation": false,
+      "measured": "In a hosted runtime every endpoint of an even-sized pool is chosen (an even pool does not see only every other endpoint), the choice is not a fixed cycle, and counts are close to equal but not equal to within one. Outside hosting the choice is not a fixed cycle either. The router at this commit has no policy that gives strict per-request rotation over endpoints; the policy behaves as the random picker does.",
+      "tests": ["pkg/embed TestRoundRobinOfAnEvenPDPoolReachesEveryEndpointButIsNotStrict", "pkg/embed TestRoundRobinOfAColocatedPoolIsNotStrict", "cmd/epp/runner TestRoundRobinOutsideHostingIsNotStrict"],
+      "composition_source": "No router sample states this configuration. It is composed from the picker README (pkg/epp/framework/plugins/scheduling/picker/maxscore/README.md:14,19) and the P/D profile pair of the router's well-known configuration (test/integration/epp/wellknown_configs_test.go:108-135).",
+      "source": ["pkg/epp/framework/plugins/scheduling/picker/maxscore/picker.go:88-130", "pkg/epp/framework/plugins/scheduling/picker/common.go:79-132"],
+      "pd_decider": {"in_file": "always-disagg-pd-decider", "not_a_knob": "Swapping the decider is not one edit. prefix-based-pd-decider reads a prefix match from approx-prefix-cache-producer, so the file needs that producer, a prefix-cache-scorer in both profiles, and a nonCachedTokens above 0 (its default 0 never disaggregates); replacing only the name makes the file fail to load.", "complete_variant": "pd-prefix-based", "variant_note": "pd-prefix-based is that complete file. It scores with prefix-cache-scorer 2 and queue-scorer 1, so it is a different policy from this one, not this policy with another decider."},
+      "knobs": [
+      ],
+      "ineffective_parameters": [
+        {"id": "picker.maxNumOfEndpoints", "kind": "plugin_parameter", "plugin": "max-score-picker", "parameter": "maxNumOfEndpoints", "in_file": false, "file_value": "not stated", "router_default": 1, "source": "pkg/epp/framework/plugins/scheduling/picker/common.go:38-45", "hosted_effect": false, "reason": "The router's picker would hand the gateway its best N endpoints; the hosted boundary keeps the first of the comma-separated list for the decode pick and for the prefill pick (pkg/embed/route.go decide: Endpoint and Prefill are element 0), and the embed contract carries one endpoint per decision. A value above 1 therefore changes nothing the host sees. The value 1 is the only modelled one."}
+      ]
+    },
+    {
+      "name": "random-picker",
+      "summary": "random-picker in the profile, no scorer.",
+      "files": {"colocated": "random-picker.yaml", "pd": "random-picker-pd.yaml"},
+      "endpoint_choice": "Shuffles the candidates and keeps the first maxNumOfEndpoints; scores are ignored.",
+      "strict_per_request_rotation": false,
+      "composition_source": "Colocated: test/testdata/plugins/stable/v1/random-picker.yaml without its explicit single-profile-handler (the loader adds it) and without its maxNumOfEndpoints: 1 (the default). P/D: the profile pair of the router's well-known configuration (test/integration/epp/wellknown_configs_test.go:108-135).",
+      "source": ["pkg/epp/framework/plugins/scheduling/picker/random/picker.go:87-110"],
+      "pd_decider": {"in_file": "always-disagg-pd-decider", "not_a_knob": "Swapping the decider is not one edit. prefix-based-pd-decider reads a prefix match from approx-prefix-cache-producer, so the file needs that producer, a prefix-cache-scorer in both profiles, and a nonCachedTokens above 0 (its default 0 never disaggregates); replacing only the name makes the file fail to load.", "complete_variant": "pd-prefix-based", "variant_note": "pd-prefix-based is that complete file. It scores with prefix-cache-scorer 2 and queue-scorer 1, so it is a different policy from this one, not this policy with another decider."},
+      "knobs": [
+      ],
+      "ineffective_parameters": [
+        {"id": "picker.maxNumOfEndpoints", "kind": "plugin_parameter", "plugin": "random-picker", "parameter": "maxNumOfEndpoints", "in_file": false, "file_value": "not stated", "router_default": 1, "source": "pkg/epp/framework/plugins/scheduling/picker/common.go:38-45; test/testdata/plugins/stable/v1/random-picker.yaml:8-9", "hosted_effect": false, "reason": "The router's picker would hand the gateway its best N endpoints; the hosted boundary keeps the first of the comma-separated list for the decode pick and for the prefill pick (pkg/embed/route.go decide: Endpoint and Prefill are element 0), and the embed contract carries one endpoint per decision. A value above 1 therefore changes nothing the host sees. The value 1 is the only modelled one."}
+      ]
+    },
+    {
+      "name": "least-active-requests",
+      "summary": "active-request-scorer over the in-flight counts of inflight-load-producer, then max-score-picker.",
+      "files": {"colocated": "least-active-requests.yaml", "pd": "least-active-requests-pd.yaml"},
+      "endpoint_choice": "The endpoint with the fewest in-flight requests scores highest. Endpoints with equal counts are tied and the tie is broken as in round-robin, that is at random.",
+      "strict_per_request_rotation": false,
+      "composition_source": "pkg/epp/framework/plugins/scheduling/scorer/activerequest/README.md:3-7 and the profile pair of the router's well-known configuration (test/integration/epp/wellknown_configs_test.go:108-135). The router creates inflight-load-producer when none is configured (cmd/epp/runner/runner.go:750); the files name it so that a sweep can set its parameters.",
+      "source": ["pkg/epp/framework/plugins/scheduling/scorer/activerequest/active_request.go:99-113"],
+      "pd_decider": {"in_file": "always-disagg-pd-decider", "not_a_knob": "Swapping the decider is not one edit. prefix-based-pd-decider reads a prefix match from approx-prefix-cache-producer, so the file needs that producer, a prefix-cache-scorer in both profiles, and a nonCachedTokens above 0 (its default 0 never disaggregates); replacing only the name makes the file fail to load.", "complete_variant": "pd-prefix-based", "variant_note": "pd-prefix-based is that complete file. It scores with prefix-cache-scorer 2 and queue-scorer 1, so it is a different policy from this one, not this policy with another decider."},
+      "knobs": [
+        {"id": "weight.active-request-scorer", "kind": "scorer_weight", "plugin": "active-request-scorer", "in_file": false, "file_value": "not stated", "router_default": 1.0, "source": "pkg/epp/config/loader/defaults.go:43-46,203", "hosted_effect": true},
+        {"id": "active-request-scorer.idleThreshold", "kind": "plugin_parameter", "plugin": "active-request-scorer", "parameter": "idleThreshold", "in_file": false, "file_value": "not stated", "router_default": 0, "source": "pkg/epp/framework/plugins/scheduling/scorer/activerequest/active_request.go:99-102; README.md:10", "hosted_effect": true, "effective_when": "changes the choice when an endpoint holds in-flight requests up to the threshold: it then scores like an idle one"},
+        {"id": "active-request-scorer.maxBusyScore", "kind": "plugin_parameter", "plugin": "active-request-scorer", "parameter": "maxBusyScore", "in_file": false, "file_value": "not stated", "router_default": 1.0, "range": "0.0 to 1.0", "source": "pkg/epp/framework/plugins/scheduling/scorer/activerequest/active_request.go:105-113; README.md:11", "hosted_effect": true, "effective_when": "in a file whose only scorer is the active-request-scorer only the value 0 can change a choice: it makes every busy endpoint score 0, so they tie; any other value scales the scores and keeps their order"}
+      ],
+      "ineffective_parameters": [
+        {"id": "inflight-load-producer.addEstimatedOutputTokens", "kind": "plugin_parameter", "plugin": "inflight-load-producer", "parameter": "addEstimatedOutputTokens", "in_file": false, "file_value": "not stated", "router_default": false, "note": "Changes token counts only; the active-request scorer reads request counts.", "source": "pkg/epp/framework/plugins/requestcontrol/dataproducer/inflightload/README.md:30", "hosted_effect": false, "reason": "It adds estimated output tokens to the in-flight load's Tokens figure. The active-request-scorer reads the request count (InFlightLoad.Requests, scorer/activerequest/active_request.go requestCount), and no other plugin in the file reads Tokens, so no choice changes."},
+        {"id": "picker.maxNumOfEndpoints", "kind": "plugin_parameter", "plugin": "max-score-picker", "parameter": "maxNumOfEndpoints", "in_file": false, "file_value": "not stated", "router_default": 1, "source": "pkg/epp/framework/plugins/scheduling/picker/common.go:38-45", "hosted_effect": false, "reason": "The router's picker would hand the gateway its best N endpoints; the hosted boundary keeps the first of the comma-separated list for the decode pick and for the prefill pick (pkg/embed/route.go decide: Endpoint and Prefill are element 0), and the embed contract carries one endpoint per decision. A value above 1 therefore changes nothing the host sees. The value 1 is the only modelled one."}
+      ]
+    },
+    {
+      "name": "pd-prefix-based",
+      "summary": "The router's own P/D sample: prefill and decode profiles scored by prefix-cache-scorer 2 and queue-scorer 1, a prefix-based decider that sends a request to a prefill endpoint only when at least nonCachedTokens of its prompt are not cached on the chosen decode endpoint.",
+      "files": {"colocated": null, "pd": "pd-prefix-based.yaml"},
+      "copied_from": "deploy/config/pd-epp-config.yaml (a test shows the two parse to the same configuration)",
+      "endpoint_choice": "Highest weighted score per profile; ties as in round-robin. The prefill profile runs only when the decider approves.",
+      "strict_per_request_rotation": false,
+      "source": ["deploy/config/pd-epp-config.yaml:1-37", "pkg/epp/framework/plugins/scheduling/profilehandler/disagg/README.md:90-123"],
+      "knobs": [
+        {"id": "weight.prefill.prefix-cache-scorer", "kind": "scorer_weight", "profile": "prefill", "plugin": "prefix-cache-scorer", "in_file": true, "file_value": 2, "router_default": 1.0, "source": "deploy/config/pd-epp-config.yaml:26-27", "hosted_effect": true},
+        {"id": "weight.prefill.queue-scorer", "kind": "scorer_weight", "profile": "prefill", "plugin": "queue-scorer", "in_file": true, "file_value": 1, "router_default": 1.0, "source": "deploy/config/pd-epp-config.yaml:28-29", "hosted_effect": true},
+        {"id": "weight.decode.prefix-cache-scorer", "kind": "scorer_weight", "profile": "decode", "plugin": "prefix-cache-scorer", "in_file": true, "file_value": 2, "router_default": 1.0, "source": "deploy/config/pd-epp-config.yaml:34-35", "hosted_effect": true},
+        {"id": "weight.decode.queue-scorer", "kind": "scorer_weight", "profile": "decode", "plugin": "queue-scorer", "in_file": true, "file_value": 1, "router_default": 1.0, "source": "deploy/config/pd-epp-config.yaml:36-37", "hosted_effect": true},
+        {"id": "prefix-based-pd-decider.nonCachedTokens", "kind": "plugin_parameter", "plugin": "prefix-based-pd-decider", "parameter": "nonCachedTokens", "in_file": true, "file_value": 16, "router_default": 0, "note": "0 disables disaggregation: the decider then never approves.", "source": "deploy/config/pd-epp-config.yaml:18-20; pkg/epp/framework/plugins/scheduling/profilehandler/disagg/prefix_based_pd_decider.go:44-45,106-110; README.md:121", "hosted_effect": true},
+        {"id": "prefix-based-pd-decider.promptTokens", "kind": "plugin_parameter", "plugin": "prefix-based-pd-decider", "parameter": "promptTokens", "in_file": false, "file_value": "not stated", "router_default": 0, "note": "0 turns the minimum-prompt gate off.", "source": "pkg/epp/framework/plugins/scheduling/profilehandler/disagg/prefix_based_pd_decider.go:47-50,106-110; README.md:122", "hosted_effect": true},
+        {"id": "approx-prefix-cache-producer.maxPrefixTokensToMatch", "kind": "plugin_parameter", "plugin": "approx-prefix-cache-producer", "parameter": "maxPrefixTokensToMatch", "in_file": true, "file_value": 16384, "router_default": 131072, "source": "deploy/config/pd-epp-config.yaml:7; pkg/epp/framework/plugins/requestcontrol/dataproducer/approximateprefix/types.go:131-135", "hosted_effect": true},
+        {"id": "approx-prefix-cache-producer.lruCapacityPerServer", "kind": "plugin_parameter", "plugin": "approx-prefix-cache-producer", "parameter": "lruCapacityPerServer", "in_file": true, "file_value": 31250, "router_default": 31250, "source": "deploy/config/pd-epp-config.yaml:8; pkg/epp/framework/plugins/requestcontrol/dataproducer/approximateprefix/types.go:143-152", "hosted_effect": true},
+        {"id": "approx-prefix-cache-producer.maxPrefixBlocksToMatch", "kind": "plugin_parameter", "plugin": "approx-prefix-cache-producer", "parameter": "maxPrefixBlocksToMatch", "in_file": false, "file_value": "not stated", "router_default": 2048, "source": "pkg/epp/framework/plugins/requestcontrol/dataproducer/approximateprefix/types.go:122-129; plugin.go:408-422", "hosted_effect": true, "requires": [{"id": "approx-prefix-cache-producer.maxPrefixTokensToMatch", "value": 0}], "effective_when": "read only while maxPrefixTokensToMatch is 0 (resolveMaxBlocks); a sweep must set maxPrefixTokensToMatch to 0 in the same file. While the token cap is above 0, which is the router's default (131072) and pd-prefix-based's value (16384), this value is never read."},
+        {"id": "approx-prefix-cache-producer.blockSizeTokens", "kind": "plugin_parameter", "plugin": "approx-prefix-cache-producer", "parameter": "blockSizeTokens", "in_file": false, "file_value": "not stated", "router_default": 64, "note": "A value below 64 is raised to 64 at request time. The router's simulation sample deploy/config/sim-pd-epp-config.yaml:6-7 sets 16 with autoTune false; it is not offered here.", "source": "pkg/epp/framework/plugins/requestcontrol/dataproducer/approximateprefix/types.go:117-120; plugin.go:48-56,170-176", "hosted_effect": true},
+        {"id": "approx-prefix-cache-producer.autoTune", "kind": "plugin_parameter", "plugin": "approx-prefix-cache-producer", "parameter": "autoTune", "in_file": false, "file_value": "not stated", "router_default": true, "source": "pkg/epp/framework/plugins/requestcontrol/dataproducer/approximateprefix/types.go:179", "hosted_effect": true},
+        {"id": "prefix-cache-scorer.matchLengthWeight", "kind": "plugin_parameter", "plugin": "prefix-cache-scorer", "parameter": "matchLengthWeight", "in_file": false, "file_value": "not stated", "router_default": 0.0, "range": "0.0 to 1.0", "source": "pkg/epp/framework/plugins/scheduling/scorer/prefix/plugin.go:64-66,72-75", "hosted_effect": true},
+        {"id": "prefix-cache-scorer.matchLengthScaleTokens", "kind": "plugin_parameter", "plugin": "prefix-cache-scorer", "parameter": "matchLengthScaleTokens", "in_file": false, "file_value": "not stated", "router_default": 8192, "source": "pkg/epp/framework/plugins/scheduling/scorer/prefix/plugin.go:67-68,72-75", "hosted_effect": true, "effective_when": "read only while matchLengthWeight is above 0 (scorer/prefix/plugin.go Config)"}
+      ],
+      "ineffective_parameters": [
+        {"id": "prefix-based-pd-decider.prefixMatchInfoProducerName", "kind": "plugin_parameter", "plugin": "prefix-based-pd-decider", "parameter": "prefixMatchInfoProducerName", "in_file": false, "file_value": "not stated", "router_default": "approx-prefix-cache-producer", "source": "pkg/epp/framework/plugins/scheduling/profilehandler/disagg/prefix_based_pd_decider.go:51-55; README.md:123", "hosted_effect": false, "reason": "It names the data producer whose prefix match the decider reads. The file declares one such producer, approx-prefix-cache-producer, which is the default; any other name fails to load (the producer is not in the file). It selects, it does not tune."},
+        {"id": "picker.maxNumOfEndpoints", "kind": "plugin_parameter", "plugin": "max-score-picker", "parameter": "maxNumOfEndpoints", "in_file": false, "file_value": "not stated", "router_default": 1, "source": "pkg/epp/framework/plugins/scheduling/picker/common.go:38-45", "hosted_effect": false, "reason": "The router's picker would hand the gateway its best N endpoints; the hosted boundary keeps the first of the comma-separated list for the decode pick and for the prefill pick (pkg/embed/route.go decide: Endpoint and Prefill are element 0), and the embed contract carries one endpoint per decision. A value above 1 therefore changes nothing the host sees. The value 1 is the only modelled one."}
+      ]
+    },
+    {
+      "name": "llm-d-optimized-baseline",
+      "summary": "llm-d's optimized-baseline guide: prefix-cache-affinity-filter then token-load-scorer over approx-prefix-cache-producer and inflight-load-producer, all on their defaults.",
+      "files": {"colocated": "guides/optimized-baseline.yaml", "pd": null},
+      "copied_from": "llm-d v1.0.0 (378b42d18dabe0b9c4ced4e6f3670d93b52db08e) guides/optimized-baseline/router/optimized-baseline.values.yaml:15-30: the plugin config in the values file, dedented, byte for byte",
+      "requires": {},
+      "host_assumption": null,
+      "runs_hosted_from": {"fork_tag": "v1.0.0-blis.3"},
+      "strict_per_request_rotation": false,
+      "source": ["guides/optimized-baseline/router/optimized-baseline.values.yaml:15-30"],
+      "knobs": [
+        {"id": "prefix-cache-affinity-filter.peakPrefillThroughput", "kind": "plugin_parameter", "plugin": "prefix-cache-affinity-filter", "parameter": "peakPrefillThroughput", "in_file": false, "file_value": "not stated", "router_default": 15928, "source": "pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/plugin.go:100-108", "note": "The TTFT estimate of the load gate is in-flight tokens / this value. Per hardware and model: the guides measure it with their calibration recipe.", "hosted_effect": true},
+        {"id": "prefix-cache-affinity-filter.maxTTFTPenaltyMs", "kind": "plugin_parameter", "plugin": "prefix-cache-affinity-filter", "parameter": "maxTTFTPenaltyMs", "in_file": false, "file_value": "not stated", "router_default": 18000, "source": "pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/plugin.go:100-108", "hosted_effect": true},
+        {"id": "prefix-cache-affinity-filter.affinityThreshold", "kind": "plugin_parameter", "plugin": "prefix-cache-affinity-filter", "parameter": "affinityThreshold", "in_file": false, "file_value": "not stated", "router_default": 0.8, "source": "pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/plugin.go:100-108", "hosted_effect": true},
+        {"id": "prefix-cache-affinity-filter.explorationProbability", "kind": "plugin_parameter", "plugin": "prefix-cache-affinity-filter", "parameter": "explorationProbability", "in_file": false, "file_value": "not stated", "router_default": 0, "source": "pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/plugin.go:100-108", "hosted_effect": true},
+        {"id": "approx-prefix-cache-producer.lruCapacityPerServer", "kind": "plugin_parameter", "plugin": "approx-prefix-cache-producer", "parameter": "lruCapacityPerServer", "in_file": false, "file_value": "not stated", "router_default": 31250, "source": "pkg/epp/framework/plugins/requestcontrol/dataproducer/approximateprefix/types.go:143-152", "hosted_effect": true},
+        {"id": "approx-prefix-cache-producer.blockSizeTokens", "kind": "plugin_parameter", "plugin": "approx-prefix-cache-producer", "parameter": "blockSizeTokens", "in_file": false, "file_value": "not stated", "router_default": 64, "source": "pkg/epp/framework/plugins/requestcontrol/dataproducer/approximateprefix/types.go:117-120", "hosted_effect": true},
+        {"id": "approx-prefix-cache-producer.autoTune", "kind": "plugin_parameter", "plugin": "approx-prefix-cache-producer", "parameter": "autoTune", "in_file": false, "file_value": "not stated", "router_default": true, "source": "pkg/epp/framework/plugins/requestcontrol/dataproducer/approximateprefix/types.go:179", "hosted_effect": true}
+      ],
+      "knobs_complete": false,
+      "knobs_note": "Only parameters shown to move a hosted decision are listed. The plugins take more parameters (token-load-scorer.queueThresholdTokens, the precise producer's index settings, ...); they have no hosted test yet, so they are neither swept nor claimed ineffective.",
+      "ineffective_parameters": [
+      ]
+    },
+    {
+      "name": "llm-d-pd-disaggregation",
+      "summary": "llm-d's pd-disaggregation guide: every request takes a prefill pick (affinity filter, then token load) and a decode pick (least active requests).",
+      "files": {"colocated": null, "pd": "guides/pd-disaggregation.yaml"},
+      "copied_from": "llm-d v1.0.0 (378b42d18dabe0b9c4ced4e6f3670d93b52db08e) guides/pd-disaggregation/router/pd-disaggregation.values.yaml:17-59: the plugin config in the values file, dedented, byte for byte",
+      "requires": {},
+      "host_assumption": null,
+      "runs_hosted_from": {"fork_tag": "v1.0.0-blis.3"},
+      "strict_per_request_rotation": false,
+      "source": ["guides/pd-disaggregation/router/pd-disaggregation.values.yaml:17-59"],
+      "knobs": [
+        {"id": "prefix-cache-affinity-filter.peakPrefillThroughput", "kind": "plugin_parameter", "plugin": "prefix-cache-affinity-filter", "parameter": "peakPrefillThroughput", "in_file": true, "file_value": 33821, "router_default": 15928, "source": "pd-disaggregation/router/pd-disaggregation.values.yaml:40; pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/plugin.go:100-108", "note": "The TTFT estimate of the load gate is in-flight tokens / this value. Per hardware and model: the guides measure it with their calibration recipe.", "hosted_effect": true},
+        {"id": "prefix-cache-affinity-filter.maxTTFTPenaltyMs", "kind": "plugin_parameter", "plugin": "prefix-cache-affinity-filter", "parameter": "maxTTFTPenaltyMs", "in_file": false, "file_value": "not stated", "router_default": 18000, "source": "pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/plugin.go:100-108", "hosted_effect": true},
+        {"id": "prefix-cache-affinity-filter.affinityThreshold", "kind": "plugin_parameter", "plugin": "prefix-cache-affinity-filter", "parameter": "affinityThreshold", "in_file": false, "file_value": "not stated", "router_default": 0.8, "source": "pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/plugin.go:100-108", "hosted_effect": true},
+        {"id": "prefix-cache-affinity-filter.explorationProbability", "kind": "plugin_parameter", "plugin": "prefix-cache-affinity-filter", "parameter": "explorationProbability", "in_file": false, "file_value": "not stated", "router_default": 0, "source": "pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/plugin.go:100-108", "hosted_effect": true},
+        {"id": "approx-prefix-cache-producer.lruCapacityPerServer", "kind": "plugin_parameter", "plugin": "approx-prefix-cache-producer", "parameter": "lruCapacityPerServer", "in_file": false, "file_value": "not stated", "router_default": 31250, "source": "pkg/epp/framework/plugins/requestcontrol/dataproducer/approximateprefix/types.go:143-152", "hosted_effect": true},
+        {"id": "approx-prefix-cache-producer.blockSizeTokens", "kind": "plugin_parameter", "plugin": "approx-prefix-cache-producer", "parameter": "blockSizeTokens", "in_file": false, "file_value": "not stated", "router_default": 64, "source": "pkg/epp/framework/plugins/requestcontrol/dataproducer/approximateprefix/types.go:117-120", "hosted_effect": true},
+        {"id": "approx-prefix-cache-producer.autoTune", "kind": "plugin_parameter", "plugin": "approx-prefix-cache-producer", "parameter": "autoTune", "in_file": false, "file_value": "not stated", "router_default": true, "source": "pkg/epp/framework/plugins/requestcontrol/dataproducer/approximateprefix/types.go:179", "hosted_effect": true}
+      ],
+      "knobs_complete": false,
+      "knobs_note": "Only parameters shown to move a hosted decision are listed. The plugins take more parameters (token-load-scorer.queueThresholdTokens, the precise producer's index settings, ...); they have no hosted test yet, so they are neither swept nor claimed ineffective.",
+      "ineffective_parameters": [
+      ]
+    },
+    {
+      "name": "llm-d-tiered-prefix-cache-cpu",
+      "summary": "llm-d's tiered-prefix-cache guide (single host, CPU tier): queue, KV usage, a GPU-tier and a CPU-tier prefix scorer over two approx-prefix-cache-producers, and no-hit-lru-scorer.",
+      "files": {"colocated": "guides/tiered-prefix-cache-cpu.yaml", "pd": null},
+      "copied_from": "llm-d v1.0.0 (378b42d18dabe0b9c4ced4e6f3670d93b52db08e) guides/tiered-prefix-cache/router/single-host/tiered-prefix-cache-cpu.values.yaml:15-52: the plugin config in the values file, dedented, byte for byte",
+      "requires": {},
+      "host_assumption": null,
+      "runs_hosted_from": {"fork_tag": "v1.0.0-blis.3"},
+      "strict_per_request_rotation": false,
+      "source": ["guides/tiered-prefix-cache/router/single-host/tiered-prefix-cache-cpu.values.yaml:15-52"],
+      "knobs": [
+        {"id": "weight.queue-scorer", "kind": "scorer_weight", "plugin": "queue-scorer", "in_file": false, "file_value": "not stated", "router_default": 1.0, "source": "tiered-prefix-cache/router/single-host/tiered-prefix-cache-cpu.values.yaml:48", "hosted_effect": true},
+        {"id": "weight.kv-cache-utilization-scorer", "kind": "scorer_weight", "plugin": "kv-cache-utilization-scorer", "in_file": false, "file_value": "not stated", "router_default": 1.0, "source": "tiered-prefix-cache/router/single-host/tiered-prefix-cache-cpu.values.yaml:49", "hosted_effect": true}
+      ],
+      "knobs_complete": false,
+      "knobs_note": "Only parameters shown to move a hosted decision are listed. The plugins take more parameters (token-load-scorer.queueThresholdTokens, the precise producer's index settings, ...); they have no hosted test yet, so they are neither swept nor claimed ineffective.",
+      "ineffective_parameters": [
+      ]
+    },
+    {
+      "name": "llm-d-nemotron-3-ultra",
+      "summary": "llm-d's Nemotron 3 Ultra model guide: always-disaggregated P/D, prefill by token load behind the affinity filter, decode by least active requests.",
+      "files": {"colocated": null, "pd": "guides/nemotron-3-ultra.yaml"},
+      "copied_from": "llm-d v1.0.0 (378b42d18dabe0b9c4ced4e6f3670d93b52db08e) guides/models/nemotron-3-ultra/router/nemotron-3-ultra.values.yaml:25-54: the plugin config in the values file, dedented, byte for byte",
+      "requires": {},
+      "host_assumption": null,
+      "runs_hosted_from": {"fork_tag": "v1.0.0-blis.3"},
+      "strict_per_request_rotation": false,
+      "source": ["guides/models/nemotron-3-ultra/router/nemotron-3-ultra.values.yaml:25-54"],
+      "knobs": [
+        {"id": "prefix-cache-affinity-filter.peakPrefillThroughput", "kind": "plugin_parameter", "plugin": "prefix-cache-affinity-filter", "parameter": "peakPrefillThroughput", "in_file": true, "file_value": 9866, "router_default": 15928, "source": "models/nemotron-3-ultra/router/nemotron-3-ultra.values.yaml:43; pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/plugin.go:100-108", "note": "The TTFT estimate of the load gate is in-flight tokens / this value. Per hardware and model: the guides measure it with their calibration recipe.", "hosted_effect": true},
+        {"id": "prefix-cache-affinity-filter.maxTTFTPenaltyMs", "kind": "plugin_parameter", "plugin": "prefix-cache-affinity-filter", "parameter": "maxTTFTPenaltyMs", "in_file": false, "file_value": "not stated", "router_default": 18000, "source": "pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/plugin.go:100-108", "hosted_effect": true},
+        {"id": "prefix-cache-affinity-filter.affinityThreshold", "kind": "plugin_parameter", "plugin": "prefix-cache-affinity-filter", "parameter": "affinityThreshold", "in_file": false, "file_value": "not stated", "router_default": 0.8, "source": "pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/plugin.go:100-108", "hosted_effect": true},
+        {"id": "prefix-cache-affinity-filter.explorationProbability", "kind": "plugin_parameter", "plugin": "prefix-cache-affinity-filter", "parameter": "explorationProbability", "in_file": false, "file_value": "not stated", "router_default": 0, "source": "pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/plugin.go:100-108", "hosted_effect": true},
+        {"id": "approx-prefix-cache-producer.lruCapacityPerServer", "kind": "plugin_parameter", "plugin": "approx-prefix-cache-producer", "parameter": "lruCapacityPerServer", "in_file": true, "file_value": 4000000, "router_default": 31250, "source": "models/nemotron-3-ultra/router/nemotron-3-ultra.values.yaml:38; pkg/epp/framework/plugins/requestcontrol/dataproducer/approximateprefix/types.go:143-152", "hosted_effect": true},
+        {"id": "approx-prefix-cache-producer.blockSizeTokens", "kind": "plugin_parameter", "plugin": "approx-prefix-cache-producer", "parameter": "blockSizeTokens", "in_file": false, "file_value": "not stated", "router_default": 64, "source": "pkg/epp/framework/plugins/requestcontrol/dataproducer/approximateprefix/types.go:117-120", "hosted_effect": true},
+        {"id": "approx-prefix-cache-producer.autoTune", "kind": "plugin_parameter", "plugin": "approx-prefix-cache-producer", "parameter": "autoTune", "in_file": true, "file_value": false, "router_default": true, "source": "models/nemotron-3-ultra/router/nemotron-3-ultra.values.yaml:37; pkg/epp/framework/plugins/requestcontrol/dataproducer/approximateprefix/types.go:179", "hosted_effect": true}
+      ],
+      "knobs_complete": false,
+      "knobs_note": "Only parameters shown to move a hosted decision are listed. The plugins take more parameters (token-load-scorer.queueThresholdTokens, the precise producer's index settings, ...); they have no hosted test yet, so they are neither swept nor claimed ineffective.",
+      "ineffective_parameters": [
+      ]
+    },
+    {
+      "name": "llm-d-precise-prefix-cache-routing",
+      "summary": "llm-d's precise-prefix-cache-routing guide: the token-producer renders on the pool's Ready endpoints (endpointDiscovery), precise-prefix-cache-producer indexes the engines' KV events, then the affinity filter and token-load-scorer.",
+      "files": {"colocated": "guides/precise-prefix-cache-routing.yaml", "pd": null},
+      "copied_from": "llm-d v1.0.0 (378b42d18dabe0b9c4ced4e6f3670d93b52db08e) guides/precise-prefix-cache-routing/router/precise-prefix-cache-routing.values.yaml:43-140: the plugin config in the values file, dedented, byte for byte",
+      "requires": {"model": "Qwen/Qwen3-32B", "engine": {"block_size": 64}, "kv_events": "the host ingests the engines' KV events (IngestKVEvents)"},
+      "host_assumption": "render calls take no simulated time",
+      "runs_hosted_from": {"fork_tag": null, "after": "m2/3-host-guide-plugins is merged and tagged", "needs": ["token-producer with endpointDiscovery and without discoverModelLimits"]},
+      "strict_per_request_rotation": false,
+      "source": ["guides/precise-prefix-cache-routing/router/precise-prefix-cache-routing.values.yaml:43-140"],
+      "knobs": [
+        {"id": "prefix-cache-affinity-filter.peakPrefillThroughput", "kind": "plugin_parameter", "plugin": "prefix-cache-affinity-filter", "parameter": "peakPrefillThroughput", "in_file": true, "file_value": 15926, "router_default": 15928, "source": "precise-prefix-cache-routing/router/precise-prefix-cache-routing.values.yaml:129; pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/plugin.go:100-108", "note": "The TTFT estimate of the load gate is in-flight tokens / this value. Per hardware and model: the guides measure it with their calibration recipe.", "hosted_effect": true},
+        {"id": "prefix-cache-affinity-filter.maxTTFTPenaltyMs", "kind": "plugin_parameter", "plugin": "prefix-cache-affinity-filter", "parameter": "maxTTFTPenaltyMs", "in_file": false, "file_value": "not stated", "router_default": 18000, "source": "pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/plugin.go:100-108", "hosted_effect": true},
+        {"id": "prefix-cache-affinity-filter.affinityThreshold", "kind": "plugin_parameter", "plugin": "prefix-cache-affinity-filter", "parameter": "affinityThreshold", "in_file": false, "file_value": "not stated", "router_default": 0.8, "source": "pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/plugin.go:100-108", "hosted_effect": true},
+        {"id": "prefix-cache-affinity-filter.explorationProbability", "kind": "plugin_parameter", "plugin": "prefix-cache-affinity-filter", "parameter": "explorationProbability", "in_file": false, "file_value": "not stated", "router_default": 0, "source": "pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/plugin.go:100-108", "hosted_effect": true}
+      ],
+      "knobs_complete": false,
+      "knobs_note": "Only parameters shown to move a hosted decision are listed. The plugins take more parameters (token-load-scorer.queueThresholdTokens, the precise producer's index settings, ...); they have no hosted test yet, so they are neither swept nor claimed ineffective.",
+      "ineffective_parameters": [
+      ]
+    },
+    {
+      "name": "llm-d-wide-ep",
+      "summary": "llm-d's wide-EP guide: the disaggregatedset-rollout-screener pins a revision, then always-disaggregated P/D with prefill scored by prefix cache 3, queue 2 and active requests 2, and decode by active requests.",
+      "files": {"colocated": null, "pd": "guides/wide-ep.yaml"},
+      "copied_from": "llm-d v1.0.0 (378b42d18dabe0b9c4ced4e6f3670d93b52db08e) guides/wide-ep/router/wide-ep.values.yaml:15-50: the plugin config in the values file, dedented, byte for byte",
+      "requires": {"epp_flags": ["--allow-experimental-plugins"], "pod_labels": {"all": {"disaggregatedset.x-k8s.io/name": "wide-ep-nvidia-gpu-vllm", "disaggregatedset.x-k8s.io/revision": "r1"}, "prefill": {"disaggregatedset.x-k8s.io/role": "prefill"}, "decode": {"disaggregatedset.x-k8s.io/role": "decode"}}, "pod_labels_note": "The screener's scope names the set; the revision label may hold any one value (a single revision is simulated). llm-d.ai/role is set by the scenario for the role filters."},
+      "host_assumption": "one revision; no rollout is simulated",
+      "runs_hosted_from": {"fork_tag": null, "after": "m2/3-host-guide-plugins is merged and tagged", "needs": ["disaggregatedset-rollout-screener hosted with the pod feed"]},
+      "strict_per_request_rotation": false,
+      "source": ["guides/wide-ep/router/wide-ep.values.yaml:15-50"],
+      "knobs": [
+        {"id": "weight.prefill.prefix-cache-scorer", "kind": "scorer_weight", "profile": "prefill", "plugin": "prefix-cache-scorer", "in_file": true, "file_value": 3, "router_default": 1.0, "source": "wide-ep/router/wide-ep.values.yaml:41-42", "hosted_effect": true},
+        {"id": "weight.prefill.queue-scorer", "kind": "scorer_weight", "profile": "prefill", "plugin": "queue-scorer", "in_file": true, "file_value": 2, "router_default": 1.0, "source": "wide-ep/router/wide-ep.values.yaml:43-44", "hosted_effect": true},
+        {"id": "weight.prefill.active-request-scorer", "kind": "scorer_weight", "profile": "prefill", "plugin": "active-request-scorer", "in_file": true, "file_value": 2, "router_default": 1.0, "source": "wide-ep/router/wide-ep.values.yaml:45-46", "hosted_effect": true}
+      ],
+      "knobs_complete": false,
+      "knobs_note": "Only parameters shown to move a hosted decision are listed. The plugins take more parameters (token-load-scorer.queueThresholdTokens, the precise producer's index settings, ...); they have no hosted test yet, so they are neither swept nor claimed ineffective.",
+      "ineffective_parameters": [
+      ],
+      "not_modelled": ["the guide's pool lists 8 target ports (one per data-parallel rank); a pool with several target ports is a separate track, so a hosted run uses one"]
+    },
+    {
+      "name": "llm-d-glm-5-2",
+      "summary": "llm-d's GLM-5.2 model guide: the wide-EP structure with the affinity filter and token load for prefill and active requests for decode.",
+      "files": {"colocated": null, "pd": "guides/glm-5-2.yaml"},
+      "copied_from": "llm-d v1.0.0 (378b42d18dabe0b9c4ced4e6f3670d93b52db08e) guides/models/glm-5-2/router/glm-5-2.values.yaml:20-64: the plugin config in the values file, dedented, byte for byte",
+      "requires": {"epp_flags": ["--allow-experimental-plugins"], "pod_labels": {"all": {"disaggregatedset.x-k8s.io/name": "wide-ep-vllm-glm-5-2", "disaggregatedset.x-k8s.io/revision": "r1"}, "prefill": {"disaggregatedset.x-k8s.io/role": "prefill"}, "decode": {"disaggregatedset.x-k8s.io/role": "decode"}}, "pod_labels_note": "The screener's scope names the set; the revision label may hold any one value (a single revision is simulated). llm-d.ai/role is set by the scenario for the role filters."},
+      "host_assumption": "one revision; no rollout is simulated",
+      "runs_hosted_from": {"fork_tag": null, "after": "m2/3-host-guide-plugins is merged and tagged", "needs": ["disaggregatedset-rollout-screener hosted with the pod feed"]},
+      "strict_per_request_rotation": false,
+      "source": ["guides/models/glm-5-2/router/glm-5-2.values.yaml:20-64"],
+      "knobs": [
+        {"id": "prefix-cache-affinity-filter.peakPrefillThroughput", "kind": "plugin_parameter", "plugin": "prefix-cache-affinity-filter", "parameter": "peakPrefillThroughput", "in_file": true, "file_value": 3585, "router_default": 15928, "source": "models/glm-5-2/router/glm-5-2.values.yaml:45; pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/plugin.go:100-108", "note": "The TTFT estimate of the load gate is in-flight tokens / this value. Per hardware and model: the guides measure it with their calibration recipe.", "hosted_effect": true},
+        {"id": "prefix-cache-affinity-filter.maxTTFTPenaltyMs", "kind": "plugin_parameter", "plugin": "prefix-cache-affinity-filter", "parameter": "maxTTFTPenaltyMs", "in_file": false, "file_value": "not stated", "router_default": 18000, "source": "pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/plugin.go:100-108", "hosted_effect": true},
+        {"id": "prefix-cache-affinity-filter.affinityThreshold", "kind": "plugin_parameter", "plugin": "prefix-cache-affinity-filter", "parameter": "affinityThreshold", "in_file": false, "file_value": "not stated", "router_default": 0.8, "source": "pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/plugin.go:100-108", "hosted_effect": true},
+        {"id": "prefix-cache-affinity-filter.explorationProbability", "kind": "plugin_parameter", "plugin": "prefix-cache-affinity-filter", "parameter": "explorationProbability", "in_file": false, "file_value": "not stated", "router_default": 0, "source": "pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/plugin.go:100-108", "hosted_effect": true},
+        {"id": "approx-prefix-cache-producer.lruCapacityPerServer", "kind": "plugin_parameter", "plugin": "approx-prefix-cache-producer", "parameter": "lruCapacityPerServer", "in_file": false, "file_value": "not stated", "router_default": 31250, "source": "pkg/epp/framework/plugins/requestcontrol/dataproducer/approximateprefix/types.go:143-152", "hosted_effect": true},
+        {"id": "approx-prefix-cache-producer.blockSizeTokens", "kind": "plugin_parameter", "plugin": "approx-prefix-cache-producer", "parameter": "blockSizeTokens", "in_file": false, "file_value": "not stated", "router_default": 64, "source": "pkg/epp/framework/plugins/requestcontrol/dataproducer/approximateprefix/types.go:117-120", "hosted_effect": true},
+        {"id": "approx-prefix-cache-producer.autoTune", "kind": "plugin_parameter", "plugin": "approx-prefix-cache-producer", "parameter": "autoTune", "in_file": false, "file_value": "not stated", "router_default": true, "source": "pkg/epp/framework/plugins/requestcontrol/dataproducer/approximateprefix/types.go:179", "hosted_effect": true}
+      ],
+      "knobs_complete": false,
+      "knobs_note": "Only parameters shown to move a hosted decision are listed. The plugins take more parameters (token-load-scorer.queueThresholdTokens, the precise producer's index settings, ...); they have no hosted test yet, so they are neither swept nor claimed ineffective.",
+      "ineffective_parameters": [
+      ],
+      "not_modelled": ["the guide's pool lists 8 target ports (one per data-parallel rank); a pool with several target ports is a separate track, so a hosted run uses one"]
+    },
+    {
+      "name": "llm-d-glm-5-2-gpu-cpu-affinity",
+      "summary": "llm-d's GLM-5.2 override for GPU and CPU KV tiers: the glm-5-2 file with a fixed-capacity prefix index (autoTune false, 31000 blocks per server).",
+      "files": {"colocated": null, "pd": "guides/glm-5-2-gpu-cpu-affinity.yaml"},
+      "copied_from": "llm-d v1.0.0 (378b42d18dabe0b9c4ced4e6f3670d93b52db08e) guides/models/glm-5-2/router/glm-5.2-overrides.values.yaml:9-63: the plugin config in the values file, dedented, byte for byte",
+      "requires": {"epp_flags": ["--allow-experimental-plugins"], "pod_labels": {"all": {"disaggregatedset.x-k8s.io/name": "wide-ep-vllm-glm-5-2", "disaggregatedset.x-k8s.io/revision": "r1"}, "prefill": {"disaggregatedset.x-k8s.io/role": "prefill"}, "decode": {"disaggregatedset.x-k8s.io/role": "decode"}}, "pod_labels_note": "The screener's scope names the set; the revision label may hold any one value (a single revision is simulated). llm-d.ai/role is set by the scenario for the role filters."},
+      "host_assumption": "one revision; no rollout is simulated",
+      "runs_hosted_from": {"fork_tag": null, "after": "m2/3-host-guide-plugins is merged and tagged", "needs": ["disaggregatedset-rollout-screener hosted with the pod feed"]},
+      "strict_per_request_rotation": false,
+      "source": ["guides/models/glm-5-2/router/glm-5.2-overrides.values.yaml:9-63"],
+      "knobs": [
+        {"id": "prefix-cache-affinity-filter.peakPrefillThroughput", "kind": "plugin_parameter", "plugin": "prefix-cache-affinity-filter", "parameter": "peakPrefillThroughput", "in_file": true, "file_value": 3585, "router_default": 15928, "source": "models/glm-5-2/router/glm-5.2-overrides.values.yaml:44; pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/plugin.go:100-108", "note": "The TTFT estimate of the load gate is in-flight tokens / this value. Per hardware and model: the guides measure it with their calibration recipe.", "hosted_effect": true},
+        {"id": "prefix-cache-affinity-filter.maxTTFTPenaltyMs", "kind": "plugin_parameter", "plugin": "prefix-cache-affinity-filter", "parameter": "maxTTFTPenaltyMs", "in_file": false, "file_value": "not stated", "router_default": 18000, "source": "pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/plugin.go:100-108", "hosted_effect": true},
+        {"id": "prefix-cache-affinity-filter.affinityThreshold", "kind": "plugin_parameter", "plugin": "prefix-cache-affinity-filter", "parameter": "affinityThreshold", "in_file": false, "file_value": "not stated", "router_default": 0.8, "source": "pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/plugin.go:100-108", "hosted_effect": true},
+        {"id": "prefix-cache-affinity-filter.explorationProbability", "kind": "plugin_parameter", "plugin": "prefix-cache-affinity-filter", "parameter": "explorationProbability", "in_file": false, "file_value": "not stated", "router_default": 0, "source": "pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/plugin.go:100-108", "hosted_effect": true},
+        {"id": "approx-prefix-cache-producer.lruCapacityPerServer", "kind": "plugin_parameter", "plugin": "approx-prefix-cache-producer", "parameter": "lruCapacityPerServer", "in_file": true, "file_value": 31000, "router_default": 31250, "source": "models/glm-5-2/router/glm-5.2-overrides.values.yaml:38; pkg/epp/framework/plugins/requestcontrol/dataproducer/approximateprefix/types.go:143-152", "hosted_effect": true},
+        {"id": "approx-prefix-cache-producer.blockSizeTokens", "kind": "plugin_parameter", "plugin": "approx-prefix-cache-producer", "parameter": "blockSizeTokens", "in_file": true, "file_value": 64, "router_default": 64, "source": "models/glm-5-2/router/glm-5.2-overrides.values.yaml:37; pkg/epp/framework/plugins/requestcontrol/dataproducer/approximateprefix/types.go:117-120", "hosted_effect": true},
+        {"id": "approx-prefix-cache-producer.autoTune", "kind": "plugin_parameter", "plugin": "approx-prefix-cache-producer", "parameter": "autoTune", "in_file": true, "file_value": false, "router_default": true, "source": "models/glm-5-2/router/glm-5.2-overrides.values.yaml:26; pkg/epp/framework/plugins/requestcontrol/dataproducer/approximateprefix/types.go:179", "hosted_effect": true}
+      ],
+      "knobs_complete": false,
+      "knobs_note": "Only parameters shown to move a hosted decision are listed. The plugins take more parameters (token-load-scorer.queueThresholdTokens, the precise producer's index settings, ...); they have no hosted test yet, so they are neither swept nor claimed ineffective.",
+      "ineffective_parameters": [
+      ],
+      "not_modelled": ["the guide's pool lists 8 target ports (one per data-parallel rank); a pool with several target ports is a separate track, so a hosted run uses one"]
+    },
+    {
+      "name": "llm-d-glm-5-2-precise",
+      "summary": "llm-d's GLM-5.2 precise-routing override: the glm-5-2 structure with a token-producer rendering at http://wide-ep-render:8000 and a precise-prefix-cache-producer fed by the engines' KV events.",
+      "files": {"colocated": null, "pd": "guides/glm-5-2-precise.yaml"},
+      "copied_from": "llm-d v1.0.0 (378b42d18dabe0b9c4ced4e6f3670d93b52db08e) guides/models/glm-5-2/router/precise-routing.values.yaml:20-100: the plugin config in the values file, dedented, byte for byte",
+      "requires": {"epp_flags": ["--allow-experimental-plugins"], "pod_labels": {"all": {"disaggregatedset.x-k8s.io/name": "wide-ep-vllm-glm-5-2", "disaggregatedset.x-k8s.io/revision": "r1"}, "prefill": {"disaggregatedset.x-k8s.io/role": "prefill"}, "decode": {"disaggregatedset.x-k8s.io/role": "decode"}}, "pod_labels_note": "The screener's scope names the set; the revision label may hold any one value (a single revision is simulated). llm-d.ai/role is set by the scenario for the role filters.", "model": "zai-org/GLM-5.2-FP8", "engine": {"block_size": 64}, "kv_events": "the host ingests the engines' KV events (IngestKVEvents)", "render_url": "http://wide-ep-render:8000 answers /v1/completions/render"},
+      "host_assumption": "one revision; no rollout is simulated; render calls take no simulated time",
+      "runs_hosted_from": {"fork_tag": null, "after": "m2/3-host-guide-plugins is merged and tagged", "needs": ["disaggregatedset-rollout-screener hosted with the pod feed"]},
+      "strict_per_request_rotation": false,
+      "source": ["guides/models/glm-5-2/router/precise-routing.values.yaml:20-100"],
+      "knobs": [
+        {"id": "prefix-cache-affinity-filter.peakPrefillThroughput", "kind": "plugin_parameter", "plugin": "prefix-cache-affinity-filter", "parameter": "peakPrefillThroughput", "in_file": true, "file_value": 3585, "router_default": 15928, "source": "models/glm-5-2/router/precise-routing.values.yaml:80; pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/plugin.go:100-108", "note": "The TTFT estimate of the load gate is in-flight tokens / this value. Per hardware and model: the guides measure it with their calibration recipe.", "hosted_effect": true},
+        {"id": "prefix-cache-affinity-filter.maxTTFTPenaltyMs", "kind": "plugin_parameter", "plugin": "prefix-cache-affinity-filter", "parameter": "maxTTFTPenaltyMs", "in_file": false, "file_value": "not stated", "router_default": 18000, "source": "pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/plugin.go:100-108", "hosted_effect": true},
+        {"id": "prefix-cache-affinity-filter.affinityThreshold", "kind": "plugin_parameter", "plugin": "prefix-cache-affinity-filter", "parameter": "affinityThreshold", "in_file": false, "file_value": "not stated", "router_default": 0.8, "source": "pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/plugin.go:100-108", "hosted_effect": true},
+        {"id": "prefix-cache-affinity-filter.explorationProbability", "kind": "plugin_parameter", "plugin": "prefix-cache-affinity-filter", "parameter": "explorationProbability", "in_file": false, "file_value": "not stated", "router_default": 0, "source": "pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/plugin.go:100-108", "hosted_effect": true}
+      ],
+      "knobs_complete": false,
+      "knobs_note": "Only parameters shown to move a hosted decision are listed. The plugins take more parameters (token-load-scorer.queueThresholdTokens, the precise producer's index settings, ...); they have no hosted test yet, so they are neither swept nor claimed ineffective.",
+      "ineffective_parameters": [
+      ],
+      "not_modelled": ["the guide's pool lists 8 target ports (one per data-parallel rank); a pool with several target ports is a separate track, so a hosted run uses one"]
+    },
+    {
+      "name": "llm-d-deepseek-v4",
+      "summary": "llm-d's DeepSeek-V4 model guide: the wide-EP structure with the affinity filter (peakPrefillThroughput 20000, an estimate in the guide) for prefill and active requests for decode.",
+      "files": {"colocated": null, "pd": "guides/deepseek-v4.yaml"},
+      "copied_from": "llm-d v1.0.0 (378b42d18dabe0b9c4ced4e6f3670d93b52db08e) guides/models/deepseek-v4/router/deepseek-v4.values.yaml:20-71: the plugin config in the values file, dedented, byte for byte",
+      "requires": {"epp_flags": ["--allow-experimental-plugins"], "pod_labels": {"all": {"disaggregatedset.x-k8s.io/name": "wide-ep-vllm-dsv4", "disaggregatedset.x-k8s.io/revision": "r1"}, "prefill": {"disaggregatedset.x-k8s.io/role": "prefill"}, "decode": {"disaggregatedset.x-k8s.io/role": "decode"}}, "pod_labels_note": "The screener's scope names the set; the revision label may hold any one value (a single revision is simulated). llm-d.ai/role is set by the scenario for the role filters."},
+      "host_assumption": "one revision; no rollout is simulated",
+      "runs_hosted_from": {"fork_tag": null, "after": "m2/3-host-guide-plugins is merged and tagged", "needs": ["disaggregatedset-rollout-screener hosted with the pod feed"]},
+      "strict_per_request_rotation": false,
+      "source": ["guides/models/deepseek-v4/router/deepseek-v4.values.yaml:20-71"],
+      "knobs": [
+        {"id": "prefix-cache-affinity-filter.peakPrefillThroughput", "kind": "plugin_parameter", "plugin": "prefix-cache-affinity-filter", "parameter": "peakPrefillThroughput", "in_file": true, "file_value": 20000, "router_default": 15928, "source": "models/deepseek-v4/router/deepseek-v4.values.yaml:52; pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/plugin.go:100-108", "note": "The TTFT estimate of the load gate is in-flight tokens / this value. Per hardware and model: the guides measure it with their calibration recipe.", "hosted_effect": true},
+        {"id": "prefix-cache-affinity-filter.maxTTFTPenaltyMs", "kind": "plugin_parameter", "plugin": "prefix-cache-affinity-filter", "parameter": "maxTTFTPenaltyMs", "in_file": false, "file_value": "not stated", "router_default": 18000, "source": "pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/plugin.go:100-108", "hosted_effect": true},
+        {"id": "prefix-cache-affinity-filter.affinityThreshold", "kind": "plugin_parameter", "plugin": "prefix-cache-affinity-filter", "parameter": "affinityThreshold", "in_file": false, "file_value": "not stated", "router_default": 0.8, "source": "pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/plugin.go:100-108", "hosted_effect": true},
+        {"id": "prefix-cache-affinity-filter.explorationProbability", "kind": "plugin_parameter", "plugin": "prefix-cache-affinity-filter", "parameter": "explorationProbability", "in_file": false, "file_value": "not stated", "router_default": 0, "source": "pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/plugin.go:100-108", "hosted_effect": true},
+        {"id": "approx-prefix-cache-producer.lruCapacityPerServer", "kind": "plugin_parameter", "plugin": "approx-prefix-cache-producer", "parameter": "lruCapacityPerServer", "in_file": false, "file_value": "not stated", "router_default": 31250, "source": "pkg/epp/framework/plugins/requestcontrol/dataproducer/approximateprefix/types.go:143-152", "hosted_effect": true},
+        {"id": "approx-prefix-cache-producer.blockSizeTokens", "kind": "plugin_parameter", "plugin": "approx-prefix-cache-producer", "parameter": "blockSizeTokens", "in_file": false, "file_value": "not stated", "router_default": 64, "source": "pkg/epp/framework/plugins/requestcontrol/dataproducer/approximateprefix/types.go:117-120", "hosted_effect": true},
+        {"id": "approx-prefix-cache-producer.autoTune", "kind": "plugin_parameter", "plugin": "approx-prefix-cache-producer", "parameter": "autoTune", "in_file": false, "file_value": "not stated", "router_default": true, "source": "pkg/epp/framework/plugins/requestcontrol/dataproducer/approximateprefix/types.go:179", "hosted_effect": true}
+      ],
+      "knobs_complete": false,
+      "knobs_note": "Only parameters shown to move a hosted decision are listed. The plugins take more parameters (token-load-scorer.queueThresholdTokens, the precise producer's index settings, ...); they have no hosted test yet, so they are neither swept nor claimed ineffective.",
+      "ineffective_parameters": [
+      ]
+    }
+  ],
+  "hosted_effect": {"rule": "knobs lists only parameters that change what the hosted router decides; each is moved by a test (pkg/embed TestKnobMovesAHostedDecision) and carries hosted_effect true. ineffective_parameters lists parameters the router accepts that cannot change a hosted decision, with the reason and a test that shows it (pkg/embed TestIneffectiveParametersLeaveTheDecisionAlone). A search should sweep knobs only.", "decision": "A hosted decision is the Decision the router returns to the host: one endpoint (and one prefill endpoint), as pkg/embed/route.go reads them."}
+}
