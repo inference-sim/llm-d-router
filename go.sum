@@ -147,6 +147,8 @@ github.com/inference-sim/blis-substrate v0.14.0 h1:CJGVuwQo6L8rbx3zL7NYygvCvCywT
 github.com/inference-sim/blis-substrate v0.14.0/go.mod h1:vZYEOia6TQOW+HZYbvJXCMDXus85dBj6vAyPr9rJF3A=
 github.com/inference-sim/blis-substrate v0.14.2-0.20261117033833-eed50db24303 h1:SjNt+moRA666+2+UXF0a3jgbJky5QrXP9LbOR081TwI=
 github.com/inference-sim/blis-substrate v0.14.2-0.20261117033833-eed50db24303/go.mod h1:vZYEOia6TQOW+HZYbvJXCMDXus85dBj6vAyPr9rJF3A=
+github.com/inference-sim/blis-substrate v0.14.2-0.20261117034650-8755014a9c75 h1:grtV6xnPUEkX4dWiAS6N4aw1GDSOk13JH54vZRs7fkM=
+github.com/inference-sim/blis-substrate v0.14.2-0.20261117034650-8755014a9c75/go.mod h1:vZYEOia6TQOW+HZYbvJXCMDXus85dBj6vAyPr9rJF3A=
 github.com/jellydator/ttlcache/v3 v3.4.1 h1:bOdXmXiycyK6E6Qjyuj5vl+/vU3SCOoDs8a86NbHjAQ=
 github.com/jellydator/ttlcache/v3 v3.4.1/go.mod h1:j7LO12PNghFg5+0v9budMAT4rDK4JY969jb9vOdOBBk=
 github.com/joshdk/go-junit v1.0.0 h1:S86cUKIdwBHWwA6xCmFlf3RTLfVXYQfvanM5Uh+K6GE=
