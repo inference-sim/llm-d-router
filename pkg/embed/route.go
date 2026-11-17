@@ -205,9 +205,9 @@ func requestHeaderMap(req contract.Request) map[string]string {
 		h[metadata.TTFTSLOHeaderKey] = strconv.FormatInt(int64((req.TTFTSLO+time.Millisecond-1)/time.Millisecond), 10)
 	}
 	if req.SessionID != "" {
-		// The header llm-d's session-affinity plugins read by default
-		// (sessionaffinity.DefaultSessionIDHeader).
-		h["x-session-id"] = req.SessionID
+		// The contract's header, which is the one llm-d's session-affinity plugins read by default
+		// (sessionaffinity.DefaultSessionIDHeader; TestSessionConstantsAgreeWithTheirOwners holds them equal).
+		h[contract.SessionIDHeader] = req.SessionID
 	}
 	if req.TTL > 0 {
 		h[metadata.InferenceTTLHeaderKey] = req.TTL.String()

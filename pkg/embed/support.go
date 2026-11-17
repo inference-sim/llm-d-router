@@ -29,8 +29,11 @@ import (
 	"github.com/llm-d/llm-d-router/pkg/epp/config"
 	fwkplugin "github.com/llm-d/llm-d-router/pkg/epp/framework/interface/plugin"
 	p2pconstants "github.com/llm-d/llm-d-router/pkg/epp/framework/plugins/requestcontrol/dataproducer/p2psource/constants"
+	sessionidconstants "github.com/llm-d/llm-d-router/pkg/epp/framework/plugins/requestcontrol/dataproducer/sessionid/constants"
 	"github.com/llm-d/llm-d-router/pkg/epp/framework/plugins/requestcontrol/screener/disaggregatedsetrollout"
+	filtersessionaffinity "github.com/llm-d/llm-d-router/pkg/epp/framework/plugins/scheduling/filter/sessionaffinity"
 	"github.com/llm-d/llm-d-router/pkg/epp/framework/plugins/scheduling/filter/utilization"
+	scoresessionaffinity "github.com/llm-d/llm-d-router/pkg/epp/framework/plugins/scheduling/scorer/sessionaffinity"
 )
 
 // refusedPrefix starts every refusal of a configuration the hosted router cannot run as the
@@ -47,9 +50,9 @@ const notAudited = "it has not been audited for the hosting runtime"
 var audited = map[string]bool{
 	// session affinity: the session_id strategy's bindings age on the runtime's clock
 	// (scheduling/util/sessionaffinity), and its eviction sweep is a runtime goroutine
-	"session-affinity-scorer": true,
-	"session-affinity-filter": true,
-	"session-id-producer":     true,
+	scoresessionaffinity.SessionAffinityType:  true,
+	filtersessionaffinity.SessionAffinityType: true,
+	sessionidconstants.SessionIDProducerType:  true,
 	// profile handlers and pickers
 	"single-profile-handler": true,
 	"disagg-profile-handler": true,

@@ -29,6 +29,10 @@ import (
 	"sigs.k8s.io/yaml"
 
 	reqcommon "github.com/llm-d/llm-d-router/pkg/common/request"
+	sessionidconstants "github.com/llm-d/llm-d-router/pkg/epp/framework/plugins/requestcontrol/dataproducer/sessionid/constants"
+	filtersessionaffinity "github.com/llm-d/llm-d-router/pkg/epp/framework/plugins/scheduling/filter/sessionaffinity"
+	scoresessionaffinity "github.com/llm-d/llm-d-router/pkg/epp/framework/plugins/scheduling/scorer/sessionaffinity"
+	"github.com/llm-d/llm-d-router/pkg/epp/framework/plugins/scheduling/util/sessionaffinity"
 	runserver "github.com/llm-d/llm-d-router/pkg/epp/server"
 )
 
@@ -189,7 +193,7 @@ func requirements(flags *parsedFlags, doc configDoc) contract.Requirements {
 			req.PrefixIndexes = append(req.PrefixIndexes, prefixIndexFacts(p.name(), p.Parameters))
 		case "disagg-profile-handler":
 			req.Disaggregates = true
-		case "session-affinity-scorer", "session-affinity-filter", "session-id-producer":
+		case scoresessionaffinity.SessionAffinityType, filtersessionaffinity.SessionAffinityType, sessionidconstants.SessionIDProducerType:
 			req.SessionIdentities = append(req.SessionIdentities, sessionIdentityFacts(p.Type, p.name(), p.Parameters)...)
 		}
 	}
@@ -250,18 +254,12 @@ func prefixIndexFacts(name string, params map[string]any) contract.PrefixIndex {
 	return ix
 }
 
-// Defaults of the session plugins (scheduling/util/sessionaffinity).
-const (
-	defaultSessionIDHeader    = "x-session-id"
-	defaultSessionTokenHeader = "x-session-token"
-)
-
 // sessionIdentityFacts are the places a session plugin reads the session identifier: one per
 // session_id source, one for the encoded-endpoint token's header, or the producer's header or cookie.
 func sessionIdentityFacts(typ, name string, params map[string]any) []contract.SessionIdentity {
 	id := contract.SessionIdentity{Name: name, Type: typ}
 	lower := func(v any) string { s, _ := v.(string); return strings.ToLower(strings.TrimSpace(s)) }
-	if typ == "session-id-producer" {
+	if typ == sessionidconstants.SessionIDProducerType {
 		id.Header = lower(params["headerName"])
 		id.Cookie, _ = params["cookieName"].(string)
 		return []contract.SessionIdentity{id}
@@ -272,7 +270,7 @@ func sessionIdentityFacts(typ, name string, params map[string]any) []contract.Se
 	}
 	if id.Strategy != contract.SessionStrategyID {
 		cfg, _ := params["encodedEndpointHeaderConfig"].(map[string]any)
-		id.Header = cmp.Or(lower(cfg["header"]), defaultSessionTokenHeader)
+		id.Header = cmp.Or(lower(cfg["header"]), sessionaffinity.DefaultHeader)
 		return []contract.SessionIdentity{id}
 	}
 	cfg, _ := params["sessionIdConfig"].(map[string]any)
@@ -286,7 +284,7 @@ func sessionIdentityFacts(typ, name string, params map[string]any) []contract.Se
 		out = append(out, one)
 	}
 	if len(out) == 0 { // the plugin reads x-session-id when it is given no sources
-		id.Header = defaultSessionIDHeader
+		id.Header = sessionaffinity.DefaultSessionIDHeader
 		out = append(out, id)
 	}
 	return out
