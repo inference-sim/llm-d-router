@@ -198,6 +198,11 @@ func requestHeaderMap(req contract.Request) map[string]string {
 		// The header is whole milliseconds; round up so a sub-millisecond target stays a target.
 		h[metadata.TTFTSLOHeaderKey] = strconv.FormatInt(int64((req.TTFTSLO+time.Millisecond-1)/time.Millisecond), 10)
 	}
+	if req.SessionID != "" {
+		// The header llm-d's session-affinity plugins read by default
+		// (sessionaffinity.DefaultSessionIDHeader).
+		h["x-session-id"] = req.SessionID
+	}
 	if req.TTL > 0 {
 		h[metadata.InferenceTTLHeaderKey] = req.TTL.String()
 	}

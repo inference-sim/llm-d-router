@@ -53,6 +53,8 @@ func TestRequestHeaderMap(t *testing.T) {
 		{"TTFT negative is absent", func(r *contract.Request) { r.TTFTSLO = -time.Second }, base},
 		{"TTL as Duration.String", func(r *contract.Request) { r.TTL = 1500 * time.Millisecond }, with(map[string]string{metadata.InferenceTTLHeaderKey: "1.5s"})},
 		{"TTL microseconds", func(r *contract.Request) { r.TTL = 250 * time.Microsecond }, with(map[string]string{metadata.InferenceTTLHeaderKey: "250µs"})},
+		{"session id verbatim", func(r *contract.Request) { r.SessionID = "s-1" }, with(map[string]string{"x-session-id": "s-1"})},
+		{"empty session id is absent", func(r *contract.Request) { r.SessionID = "" }, base},
 		{"TTL zero is absent", func(r *contract.Request) { r.TTL = 0 }, base},
 		{"TTL negative is absent", func(r *contract.Request) { r.TTL = -time.Second }, base},
 	} {
