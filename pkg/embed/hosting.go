@@ -40,6 +40,10 @@ import (
 // host resumes them in. A later goroutine that cannot run yet (it waits for an earlier one) holds
 // nothing back. This relies on the contract's baton model (one router goroutine runs at a time),
 // which tells the adapter which goroutine is parking.
+//
+// The flow-control processor no longer needs this order: it parks on its cleanup sweep before it
+// waits (inference-sim#2043). The order stays as defence in depth for a wait the lint accepted on
+// the baseline; it costs one scan at Stop and changes no decision.
 type hostRuntime struct {
 	rt  contract.Runtime
 	clk hostClock

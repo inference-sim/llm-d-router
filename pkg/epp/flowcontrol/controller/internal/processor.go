@@ -111,7 +111,10 @@ type Processor struct {
 	order []int
 
 	// wg is used to wait for background tasks (cleanup sweep) to complete on shutdown.
-	wg             sync.WaitGroup
+	wg sync.WaitGroup
+	// cleanupDone is set by the cleanup sweep as it returns, so a hosted parent can park until it is true: a
+	// WaitGroup cannot be queried, and a bare Wait is invisible to a host that runs one goroutine at a time.
+	cleanupDone    atomic.Bool
 	isShuttingDown atomic.Bool
 	shutdownOnce   sync.Once
 
@@ -268,12 +271,12 @@ func (p *Processor) Run(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			p.shutdown()
-			p.wg.Wait()
+			p.waitForCleanup(rt)
 			return
 		case item, ok := <-p.enqueueChan:
 			if !ok { // Should not happen in practice, but is a clean shutdown signal.
 				p.shutdown()
-				p.wg.Wait()
+				p.waitForCleanup(rt)
 				return
 			}
 			// This is a safeguard against logic errors in the distributor.
@@ -708,10 +711,19 @@ func (p *Processor) dispatchItem(itemAcc flowcontrol.QueueItemAccessor) error {
 	return nil
 }
 
+// waitForCleanup blocks until the cleanup sweep has returned. The parent parks first, so a host that runs router
+// goroutines one at a time sees that it waits on its child and resumes the child; under the real runtime Park returns
+// at once and the WaitGroup does the waiting, as upstream does.
+func (p *Processor) waitForCleanup(rt hosting.Runtime) {
+	rt.Park(p.cleanupDone.Load)
+	p.wg.Wait()
+}
+
 // runCleanupSweep starts a background goroutine that periodically scans all queues for externally finalized items
 // ("zombie" items) and removes them in batches.
 func (p *Processor) runCleanupSweep(ctx context.Context) {
 	defer p.wg.Done()
+	defer p.cleanupDone.Store(true)
 	logger := p.logger.WithName("runCleanupSweep")
 	defer utilruntime.HandleCrashWithLogger(logger)
 	logger.V(logutil.DEFAULT).Info("Cleanup sweep goroutine starting.")

@@ -11,7 +11,19 @@
 # of identical uses, and the use's source line (whitespace-collapsed), tab-separated. Line
 # numbers are deliberately absent, so unrelated edits do not churn the baseline.
 # Regenerate with: go run ./hack/hosting-lint -update
+# Bare sync.WaitGroup.Wait and errgroup.Group.Wait (no Park before them in their statement list), each
+# accepted for the reason given with it (#2043):
+#   rungroup.go: the runner's servers are a path pkg/embed.New never builds.
+#   cross_replica_publisher.go publish: waits on goroutines it started with wg.Go in the same function,
+#     which are themselves baselined; the multi-replica publisher is not built by pkg/embed.New.
+#   processor.go processAllQueuesConcurrently: waits on workers that only drain a channel the same
+#     function fills and closes, and never park; it runs inside the cleanup sweep goroutine.
+#   latencypredictor_async.go Stop and model_limits.go refreshModelLimits: inside plugin types the
+#     simulator refuses or does not host (predicted latency, discovered render capabilities).
+#   pool.go Shutdown: the kvevents Pool's workers are baselined at Pool.Start; the hosted router
+#     feeds KV events through pkg/embed/kvevents.go and does not start the Pool.
 cmd/epp/runner/rungroup.go	groupRunner.Run	errgroup.Group.Go	1	eg.Go(func() error {
+cmd/epp/runner/rungroup.go	groupRunner.Run	errgroup.Group.Wait	1	return eg.Wait()
 cmd/epp/runner/runner.go	Runner.setup	go-statement	1	go func() {
 cmd/epp/runner/runner.go	serveMetrics	context.WithTimeout	1	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), metricsShutdownTimeout)
 cmd/epp/runner/runner.go	serveMetrics	go-statement	1	go func() {
@@ -34,6 +46,7 @@ pkg/epp/datalayer/collector.go	Collector.Start	go-statement	1	go c.run(ctx, tick
 pkg/epp/datalayer/collector.go	NewTimeTicker	time.NewTicker	1	Ticker: time.NewTicker(d),
 pkg/epp/datalayer/cross_replica_publisher.go	crossReplicaPublisher.delete	context.WithTimeout	1	ctx, cancel := context.WithTimeout(ctx, p.publishTimeout)
 pkg/epp/datalayer/cross_replica_publisher.go	crossReplicaPublisher.publish	sync.WaitGroup.Go	1	wg.Go(func() {
+pkg/epp/datalayer/cross_replica_publisher.go	crossReplicaPublisher.publish	sync.WaitGroup.Wait	1	wg.Wait()
 pkg/epp/datalayer/cross_replica_publisher.go	crossReplicaPublisher.publishAll	context.WithTimeout	1	dispatchCtx, cancel := context.WithTimeout(ctx, p.publishTimeout)
 pkg/epp/datalayer/cross_replica_publisher.go	crossReplicaPublisher.run	time.NewTicker	1	ticker := time.NewTicker(p.interval)
 pkg/epp/datalayer/cross_replica_publisher.go	crossReplicaPublisher.start	go-statement	1	go p.run(ctx)
@@ -88,6 +101,7 @@ pkg/epp/flowcontrol/controller/internal/processor.go	Processor.dispatchCycle	tim
 pkg/epp/flowcontrol/controller/internal/processor.go	Processor.enqueue	time.Now	1	startTime := time.Now()
 pkg/epp/flowcontrol/controller/internal/processor.go	Processor.enqueue	time.Since	1	metrics.RecordFlowControlRequestEnqueueDuration(key.ID, priorityStr, outcomeStr, time.Since(startTime))
 pkg/epp/flowcontrol/controller/internal/processor.go	Processor.processAllQueuesConcurrently	sync.WaitGroup.Go	1	wg.Go(func() {
+pkg/epp/flowcontrol/controller/internal/processor.go	Processor.processAllQueuesConcurrently	sync.WaitGroup.Wait	1	wg.Wait() // Wait for all workers to finish.
 pkg/epp/flowcontrol/controller/internal/reclamation.go	ReclamationController.sweepTimeoutsLocked	range-map	1	for requestID, r := range c.outstanding {
 pkg/epp/flowcontrol/registry/config.go	Config.Clone	range-map	1	for prio, band := range c.PriorityBands {
 pkg/epp/flowcontrol/registry/config.go	Config.validate	range-map	1	for _, band := range c.PriorityBands {
@@ -197,6 +211,7 @@ pkg/epp/framework/plugins/requestcontrol/dataproducer/predictedlatency/latencypr
 pkg/epp/framework/plugins/requestcontrol/dataproducer/predictedlatency/latencypredictorclient/coalescer.go	Predictor.doPredictBulkStrictHTTP	http.Client.Do	1	resp, err := p.httpClient.Do(req) //#nosec -- URL is operator-configured in config.PredictionURLs
 pkg/epp/framework/plugins/requestcontrol/dataproducer/predictedlatency/latencypredictorclient/latencypredictor_async.go	New	go-statement	1	go p.backgroundLoop()
 pkg/epp/framework/plugins/requestcontrol/dataproducer/predictedlatency/latencypredictorclient/latencypredictor_async.go	New	go-statement	1	go p.coalesceDispatcher()
+pkg/epp/framework/plugins/requestcontrol/dataproducer/predictedlatency/latencypredictorclient/latencypredictor_async.go	Predictor.Stop	sync.WaitGroup.Wait	1	p.wg.Wait() // Wait for the background loop to finish
 pkg/epp/framework/plugins/requestcontrol/dataproducer/predictedlatency/latencypredictorclient/latencypredictor_async.go	Predictor.backgroundLoop	context.WithTimeout	2	ctx, cancel := context.WithTimeout(context.Background(), p.config.HTTPTimeout)
 pkg/epp/framework/plugins/requestcontrol/dataproducer/predictedlatency/latencypredictorclient/latencypredictor_async.go	Predictor.backgroundLoop	time.NewTicker	1	flushTicker := time.NewTicker(p.config.FlushInterval)
 pkg/epp/framework/plugins/requestcontrol/dataproducer/predictedlatency/latencypredictorclient/latencypredictor_async.go	Predictor.backgroundLoop	time.NewTicker	1	metricsTicker := time.NewTicker(p.config.MetricsRefreshInterval)
@@ -238,6 +253,7 @@ pkg/epp/framework/plugins/requestcontrol/dataproducer/tokenizer/model_limits.go	
 pkg/epp/framework/plugins/requestcontrol/dataproducer/tokenizer/model_limits.go	discoveredEndpointPicker.refreshModelLimits	go-statement	1	go func(id string, c *renderCapability) {
 pkg/epp/framework/plugins/requestcontrol/dataproducer/tokenizer/model_limits.go	discoveredEndpointPicker.refreshModelLimits	range-map	1	for id, c := range p.capabilities {
 pkg/epp/framework/plugins/requestcontrol/dataproducer/tokenizer/model_limits.go	discoveredEndpointPicker.refreshModelLimits	range-map	1	for id, c := range snapshot {
+pkg/epp/framework/plugins/requestcontrol/dataproducer/tokenizer/model_limits.go	discoveredEndpointPicker.refreshModelLimits	sync.WaitGroup.Wait	2	wg.Wait()
 pkg/epp/framework/plugins/requestcontrol/dataproducer/tokenizer/model_limits.go	discoveredEndpointPicker.refreshModelLimits	time.Now	1	c.refreshed = time.Now()
 pkg/epp/framework/plugins/requestcontrol/dataproducer/tokenizer/model_limits.go	discoveredEndpointPicker.watchModelLimits	time.NewTicker	1	ticker := time.NewTicker(30 * time.Second)
 pkg/epp/framework/plugins/requestcontrol/dataproducer/tokenizer/model_limits.go	readModelLimit	http.Client.Do	1	resp, err := client.Do(req)
@@ -373,6 +389,7 @@ pkg/kvcache/kvblock/traced_index.go	tracedIndex.Lookup	range-map	1	for _, pods :
 pkg/kvcache/metrics/collector.go	StartMetricsLogging	go-statement	1	go func() {
 pkg/kvcache/metrics/collector.go	StartMetricsLogging	time.NewTicker	1	ticker := time.NewTicker(interval)
 pkg/kvcache/prefix_match.go	maxMatchedBlocks	range-map	1	for _, m := range matches {
+pkg/kvevents/pool.go	Pool.Shutdown	sync.WaitGroup.Wait	1	p.wg.Wait()
 pkg/kvevents/pool.go	Pool.Start	go-statement	1	go p.worker(ctx, i)
 pkg/kvevents/subscriber_manager.go	SubscriberManager.EnsureSubscriber	go-statement	1	go func() {
 pkg/kvevents/subscriber_manager.go	SubscriberManager.GetActiveSubscribers	range-map	1	for id, entry := range sm.subscribers {
