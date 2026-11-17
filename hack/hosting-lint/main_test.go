@@ -9,8 +9,11 @@ import (
 )
 
 // TestBareWaitGroupWaitIsAUse: a sync.WaitGroup.Wait is a use unless a Park statement precedes it
-// in its own statement list (RTR-7). The fixture holds two waits with no such Park, one of them
-// after a Park that sits elsewhere in the function, and one wait that is parked first.
+// in its own statement list and states, by "//hosting:park-joins <receiver>", that its predicate
+// is the completion of the group the Wait joins (RTR-7, #2215). The fixture holds four waits that
+// are uses: a bare one, one after a Park that sits elsewhere in the function, one after a Park on
+// an unrelated condition, and one after a Park that names another group; and two waits that state
+// the join, on the line above the Park and at its end.
 func TestBareWaitGroupWaitIsAUse(t *testing.T) {
 	dir, err := filepath.Abs("testdata/waitfixture")
 	if err != nil {
@@ -43,7 +46,7 @@ func TestBareWaitGroupWaitIsAUse(t *testing.T) {
 			got[u.fn] += n
 		}
 	}
-	want := map[string]int{"BadBareWait": 1, "BadParkElsewhere": 1}
+	want := map[string]int{"BadBareWait": 1, "BadParkElsewhere": 1, "BadUnrelatedPark": 1, "BadParkNamesAnotherGroup": 1}
 	if len(got) != len(want) {
 		t.Fatalf("flagged waits %v, want %v", got, want)
 	}

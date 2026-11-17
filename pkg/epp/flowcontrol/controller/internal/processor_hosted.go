@@ -23,6 +23,7 @@ import "github.com/llm-d/llm-d-router/pkg/common/hosting"
 // at once and the WaitGroup does the waiting, as upstream does. A WaitGroup cannot be queried, so the sweep sets
 // cleanupDone as it returns.
 func (p *Processor) waitForCleanup(rt hosting.Runtime) {
+	//hosting:park-joins p.wg
 	rt.Park(p.cleanupDone.Load)
 	p.wg.Wait()
 }

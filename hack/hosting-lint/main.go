@@ -25,6 +25,13 @@ limitations under the License.
 // converted or, on review, added to the baseline. A line annotated "//blis:wallclock-ok" is not
 // counted.
 //
+// A sync.WaitGroup or errgroup Wait is a blocking wait the host cannot see, unless the goroutine
+// parks first and the Park's predicate is the completion of the goroutines the Wait joins. The
+// lint cannot prove that relation, so the Park statement states it: a comment on the line above
+// it or at its end, "//hosting:park-joins <wait receiver>", naming the receiver of the Wait that
+// follows (for example "p.wg"). A Park with no such comment, or one naming another receiver, does
+// not cover the Wait, so an unrelated Park before a Wait is still a use.
+//
 // It also enforces the patch budget: the lines the fork changes in files it shares with
 // upstream, so the cost of re-applying the fork on each release stays bounded.
 //
@@ -262,6 +269,14 @@ func scanFile(pkg *packages.Package, f *ast.File, rel string, src []byte, uses m
 		}
 		uses[use{file: rel, fn: enclosing(f, pos), kind: kind, text: text}]++
 	}
+	// waitRecv is the source text of the receiver of each selected method, by its name's identifier.
+	waitRecv := map[*ast.Ident]string{}
+	ast.Inspect(f, func(n ast.Node) bool {
+		if se, ok := n.(*ast.SelectorExpr); ok {
+			waitRecv[se.Sel] = types.ExprString(se.X)
+		}
+		return true
+	})
 	ast.Inspect(f, func(n ast.Node) bool {
 		switch n := n.(type) {
 		case *ast.GoStmt:
@@ -275,9 +290,10 @@ func scanFile(pkg *packages.Package, f *ast.File, rel string, src []byte, uses m
 		case *ast.Ident:
 			if kind := classify(info.Uses[n]); kind != "" {
 				// A wait-group or errgroup Wait is a blocking wait the host cannot see unless the
-				// goroutine parks first (RTR-7): only a Wait with no rt.Park before it, in the same
-				// function, is a use.
-				if strings.HasSuffix(kind, ".Wait") && parksBefore(f, info, n.Pos()) {
+				// goroutine parks first on the completion of what it joins (RTR-7): a Wait is a use
+				// unless the Park before it, in its own statement list, states that it joins this
+				// Wait's receiver (parkJoinsMarker).
+				if strings.HasSuffix(kind, ".Wait") && parksBefore(fset, f, info, n.Pos(), waitRecv[n]) {
 					return true
 				}
 				record(n.Pos(), kind)
@@ -376,11 +392,17 @@ func enclosing(f *ast.File, pos token.Pos) string {
 	return "<file>"
 }
 
+// parkJoinsMarker is the comment a Park statement carries to state that its predicate is the
+// completion of the goroutines the following Wait joins: "//hosting:park-joins <wait receiver>".
+const parkJoinsMarker = "hosting:park-joins"
+
 // parksBefore reports whether a statement list that holds pos (a block or a case clause, the
 // innermost one) has, before the statement containing pos, a statement that is itself a call to
-// hosting.Runtime.Park. A Park elsewhere in the function, such as the top of a loop, does not
-// make this Wait visible to the host: the wait must be preceded by its own Park.
-func parksBefore(f *ast.File, info *types.Info, pos token.Pos) bool {
+// hosting.Runtime.Park and states, by parkJoinsMarker, that it joins recv, the receiver of the
+// Wait at pos. A Park elsewhere in the function, such as the top of a loop, does not make this
+// Wait visible to the host, and neither does a Park with no marker or a marker for another
+// receiver: the wait must be preceded by a Park on its own children's completion.
+func parksBefore(fset *token.FileSet, f *ast.File, info *types.Info, pos token.Pos, recv string) bool {
 	var list []ast.Stmt
 	ast.Inspect(f, func(n ast.Node) bool {
 		if n == nil || pos < n.Pos() || pos >= n.End() {
@@ -412,11 +434,35 @@ func parksBefore(f *ast.File, info *types.Info, pos token.Pos) bool {
 		if !ok || sel.Sel.Name != "Park" {
 			continue
 		}
-		if obj := info.Uses[sel.Sel]; obj != nil && obj.Pkg() != nil && strings.HasSuffix(obj.Pkg().Path(), "/pkg/common/hosting") {
+		obj := info.Uses[sel.Sel]
+		if obj == nil || obj.Pkg() == nil || !strings.HasSuffix(obj.Pkg().Path(), "/pkg/common/hosting") {
+			continue
+		}
+		if recv != "" && parkJoins(fset, f, st) == recv {
 			return true
 		}
 	}
 	return false
+}
+
+// parkJoins is the receiver a Park statement states it joins: the text after parkJoinsMarker in a
+// comment that ends on the line above the statement or starts on its last line, else "".
+func parkJoins(fset *token.FileSet, f *ast.File, st ast.Stmt) string {
+	first, last := fset.Position(st.Pos()).Line, fset.Position(st.End()).Line
+	for _, cg := range f.Comments {
+		for _, c := range cg.List {
+			text := strings.TrimSpace(strings.TrimPrefix(c.Text, "//"))
+			rest, ok := strings.CutPrefix(text, parkJoinsMarker)
+			if !ok {
+				continue
+			}
+			line := fset.Position(c.Pos()).Line
+			if line == first-1 || line == last {
+				return strings.TrimSpace(rest)
+			}
+		}
+	}
+	return ""
 }
 
 func recvName(e ast.Expr) string {
