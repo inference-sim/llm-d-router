@@ -18,6 +18,34 @@ env:
   GOTOOLCHAIN: local
 
 jobs:
+  # The plugin-audit and conformance jobs test pkg/embed against the router's hosted packages, so
+  # they run only when a change touches those, the reference configs, hack/, the module files or
+  # this workflow (hack/hosting-selection/select.sh, with its own sample-change test). A job
+  # skipped by `if` reports as skipped, which a required check accepts, so they stay required by
+  # name. A push, or a change list that cannot be read, selects them.
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      hosted: ${{ steps.select.outputs.hosted }}
+    steps:
+      # A pull request's checkout is the merge of its head into its base: the difference from the
+      # first parent is exactly what the pull request changes.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 2
+      - name: the selection answers the sample changes as designed
+        run: bash hack/hosting-selection/select_test.sh
+      - id: select
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" != pull_request ] || ! git rev-parse --verify -q HEAD^2 > /dev/null; then
+            echo "hosted=true" | tee -a "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git diff --name-only --no-renames HEAD^1 HEAD | hack/hosting-selection/select.sh | tee -a "$GITHUB_OUTPUT"
   hosting:
     runs-on: ubuntu-latest
     steps:
@@ -29,6 +57,20 @@ jobs:
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: go.mod
+          cache: false
+      # One cache of the Go module and build directories for this job. Each run saves its own entry
+      # (the key ends in the commit) and the next run restores the latest one, so the build of the
+      # last run on llm-d-r is what a pull request starts from. setup-go's own cache is keyed on
+      # go.sum alone, so it is saved once and never grows with what this job builds.
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-hosting-${{ hashFiles('go.sum', 'Dockerfile.builder') }}-${{ github.sha }}
+          restore-keys: |
+            go-hosting-${{ hashFiles('go.sum', 'Dockerfile.builder') }}-
+            go-hosting-
       - name: go.mod and go.sum are tidy
         run: go mod tidy -diff
       # setup-go installs the go line's version; this fails unless it is contracts/toolchain, and
@@ -67,6 +109,20 @@ jobs:
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: go.mod
+          cache: false
+      # One cache of the Go module and build directories for this job. Each run saves its own entry
+      # (the key ends in the commit) and the next run restores the latest one, so the build of the
+      # last run on llm-d-r is what a pull request starts from. setup-go's own cache is keyed on
+      # go.sum alone, so it is saved once and never grows with what this job builds.
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-lint-${{ hashFiles('go.sum', 'Dockerfile.builder') }}-${{ github.sha }}
+          restore-keys: |
+            go-lint-${{ hashFiles('go.sum', 'Dockerfile.builder') }}-
+            go-lint-
       - name: golangci-lint on the lines this change adds
         env:
           BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
@@ -78,6 +134,8 @@ jobs:
   # pkg/embed.New against the router conformance suite of the substrate version go.mod pins
   # (github.com/inference-sim/blis-substrate/contracts/conformance/embedtest), RTR-3.
   conformance:
+    needs: changes
+    if: needs.changes.outputs.hosted == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -120,6 +178,8 @@ jobs:
   # inference-sim's TestSupportedTypesAreHostedByTheFork holds BLIS's allow-list within the
   # audited list.
   plugin-audit:
+    needs: changes
+    if: needs.changes.outputs.hosted == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
