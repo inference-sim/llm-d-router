@@ -1321,41 +1321,6 @@ func (r *Runner) runWithFileDiscovery(ctx context.Context, opts *runserver.Optio
 	return g.Run(ctx)
 }
 
-// assembleDirector builds the request path of a router without a Kubernetes cluster: it validates
-// plugin stability, configures the data layer, and wires the scheduler, admission control and
-// Director over ds.
-func (r *Runner) assembleDirector(ctx context.Context, opts *runserver.Options, eppConfig *config.Config, ds datastore.Datastore) (
-	*requestcontrol.Director, contracts.PriorityBandControlPlane, *fceviction.RequestEvictor, error) {
-	if err := fwkplugin.ValidatePluginStability(r.PluginHandle, opts.AllowExperimentalPlugins); err != nil {
-		setupLog.Error(err, "Plugin stability validation failed")
-		return nil, nil, nil, err
-	}
-
-	if err := r.dlRuntime.Configure(eppConfig.DataConfig, setupLog); err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to configure datalayer: %w", err)
-	}
-
-	if r.schedulerConfig == nil {
-		return nil, nil, nil, errors.New("scheduler config must be set either by config api or through code")
-	}
-	setupLog.Info("parsed config", "scheduler-config", r.schedulerConfig)
-
-	scheduler := scheduling.NewSchedulerWithConfig(r.schedulerConfig)
-
-	// Outside Kubernetes there is no InferenceObjective CRD, so per-request
-	// priority falls back to Director.defaultPriority (see
-	// pkg/epp/requestcontrol/director.go); static bands defined in
-	// EndpointPickerConfig.flowControl still apply.
-	endpointCandidates := contracts.EndpointCandidates(requestcontrol.NewDatastoreEndpointCandidates(ds,
-		requestcontrol.WithDisableEndpointSubsetFilter(opts.DisableEndpointSubsetFilter)))
-	endpointCandidates, admissionController, controlPlane, requestEvictor := r.initAdmissionControl(ctx, opts, eppConfig, endpointCandidates)
-	director := requestcontrol.NewDirectorWithConfig(ds, scheduler, admissionController, endpointCandidates, r.requestControlConfig)
-	if requestEvictor != nil {
-		director.SetRequestEvictor(requestEvictor)
-	}
-	return director, controlPlane, requestEvictor, nil
-}
-
 // metricsShutdownTimeout bounds graceful shutdown of the metrics server so a
 // scraper holding a connection at process exit cannot block termination.
 const metricsShutdownTimeout = 5 * time.Second
