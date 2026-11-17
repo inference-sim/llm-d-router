@@ -111,12 +111,10 @@ type Processor struct {
 	order []int
 
 	// wg is used to wait for background tasks (cleanup sweep) to complete on shutdown.
-	wg sync.WaitGroup
-	// cleanupDone is set by the cleanup sweep as it returns, so a hosted parent can park until it is true: a
-	// WaitGroup cannot be queried, and a bare Wait is invisible to a host that runs one goroutine at a time.
-	cleanupDone    atomic.Bool
+	wg             sync.WaitGroup
 	isShuttingDown atomic.Bool
 	shutdownOnce   sync.Once
+	cleanupDone    atomic.Bool // set as the cleanup sweep returns; see waitForCleanup
 
 	// dropCounts accumulates non-dispatched request outcomes between periodic summary flushes.
 	// Written by both the main Run goroutine (enqueue, shutdown) and the runCleanupSweep goroutine (sweep),
@@ -709,14 +707,6 @@ func (p *Processor) dispatchItem(itemAcc flowcontrol.QueueItemAccessor) error {
 		reservationTracker.ReleaseDispatch(req.ID())
 	}
 	return nil
-}
-
-// waitForCleanup blocks until the cleanup sweep has returned. The parent parks first, so a host that runs router
-// goroutines one at a time sees that it waits on its child and resumes the child; under the real runtime Park returns
-// at once and the WaitGroup does the waiting, as upstream does.
-func (p *Processor) waitForCleanup(rt hosting.Runtime) {
-	rt.Park(p.cleanupDone.Load)
-	p.wg.Wait()
 }
 
 // runCleanupSweep starts a background goroutine that periodically scans all queues for externally finalized items
