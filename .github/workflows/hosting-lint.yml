@@ -7,8 +7,10 @@ name: hosting-lint
 on:
   push:
     branches: [llm-d-r]
+  # m3/** are the integration branches the fork's item pull requests merge into; the checks run there
+  # so a violation shows on the item, not first on the integration pull request into llm-d-r.
   pull_request:
-    branches: [llm-d-r]
+    branches: [llm-d-r, 'm3/**']
 
 permissions:
   contents: read
