@@ -182,11 +182,17 @@ func classify(err error) (contract.RejectKind, string) {
 
 // requestHeaderMap is the request headers a client sends for req.
 func requestHeaderMap(req contract.Request) map[string]string {
-	h := map[string]string{
+	h := map[string]string{}
+	for k, v := range req.Headers { // the client's further headers; the ones set below win
+		h[k] = v
+	}
+	for k, v := range map[string]string{
 		":method":      "POST",
 		":path":        req.Path,
 		"content-type": "application/json",
 		"x-request-id": req.ID,
+	} {
+		h[k] = v
 	}
 	if req.Objective != "" {
 		h[metadata.ObjectiveKey] = req.Objective
@@ -197,6 +203,11 @@ func requestHeaderMap(req contract.Request) map[string]string {
 	if req.TTFTSLO > 0 {
 		// The header is whole milliseconds; round up so a sub-millisecond target stays a target.
 		h[metadata.TTFTSLOHeaderKey] = strconv.FormatInt(int64((req.TTFTSLO+time.Millisecond-1)/time.Millisecond), 10)
+	}
+	if req.SessionID != "" {
+		// The header llm-d's session-affinity plugins read by default
+		// (sessionaffinity.DefaultSessionIDHeader).
+		h["x-session-id"] = req.SessionID
 	}
 	if req.TTL > 0 {
 		h[metadata.InferenceTTLHeaderKey] = req.TTL.String()

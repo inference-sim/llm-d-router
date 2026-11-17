@@ -42,6 +42,11 @@ const notAudited = "it has not been audited for the hosting runtime"
 // (the hosting-lint baseline holds no unrouted use of theirs). Any other type is refused before
 // its constructor runs, whatever the host allows.
 var audited = map[string]bool{
+	// session affinity: the session_id strategy's bindings age on the runtime's clock
+	// (scheduling/util/sessionaffinity), and its eviction sweep is a runtime goroutine
+	"session-affinity-scorer": true,
+	"session-affinity-filter": true,
+	"session-id-producer":     true,
 	// profile handlers and pickers
 	"single-profile-handler": true,
 	"disagg-profile-handler": true,

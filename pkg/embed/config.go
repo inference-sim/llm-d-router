@@ -189,6 +189,8 @@ func requirements(flags *parsedFlags, doc configDoc) contract.Requirements {
 			req.PrefixIndexes = append(req.PrefixIndexes, prefixIndexFacts(p.name(), p.Parameters))
 		case "disagg-profile-handler":
 			req.Disaggregates = true
+		case "session-affinity-scorer", "session-affinity-filter", "session-id-producer":
+			req.SessionIdentities = append(req.SessionIdentities, sessionIdentityFacts(p.Type, p.name(), p.Parameters)...)
 		}
 	}
 	if len(req.Extractors) == 0 { // the router adds its default extractor
@@ -246,6 +248,48 @@ func prefixIndexFacts(name string, params map[string]any) contract.PrefixIndex {
 		}
 	}
 	return ix
+}
+
+// Defaults of the session plugins (scheduling/util/sessionaffinity).
+const (
+	defaultSessionIDHeader    = "x-session-id"
+	defaultSessionTokenHeader = "x-session-token"
+)
+
+// sessionIdentityFacts are the places a session plugin reads the session identifier: one per
+// session_id source, one for the encoded-endpoint token's header, or the producer's header or cookie.
+func sessionIdentityFacts(typ, name string, params map[string]any) []contract.SessionIdentity {
+	id := contract.SessionIdentity{Name: name, Type: typ}
+	lower := func(v any) string { s, _ := v.(string); return strings.ToLower(strings.TrimSpace(s)) }
+	if typ == "session-id-producer" {
+		id.Header = lower(params["headerName"])
+		id.Cookie, _ = params["cookieName"].(string)
+		return []contract.SessionIdentity{id}
+	}
+	id.Strategy, _ = params["strategy"].(string)
+	if id.Strategy == "" {
+		id.Strategy = contract.SessionStrategyEncodedEndpoint
+	}
+	if id.Strategy != contract.SessionStrategyID {
+		cfg, _ := params["encodedEndpointHeaderConfig"].(map[string]any)
+		id.Header = cmp.Or(lower(cfg["header"]), defaultSessionTokenHeader)
+		return []contract.SessionIdentity{id}
+	}
+	cfg, _ := params["sessionIdConfig"].(map[string]any)
+	sources, _ := cfg["sources"].([]any)
+	var out []contract.SessionIdentity
+	for _, src := range sources {
+		m, _ := src.(map[string]any)
+		one := id
+		one.Header = lower(m["header"])
+		one.Attribute, _ = m["attribute"].(string)
+		out = append(out, one)
+	}
+	if len(out) == 0 { // the plugin reads x-session-id when it is given no sources
+		id.Header = defaultSessionIDHeader
+		out = append(out, id)
+	}
+	return out
 }
 
 func topologyFacts(doc topologyDoc) contract.Topology {
