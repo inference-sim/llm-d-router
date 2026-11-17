@@ -55,6 +55,13 @@ func TestRequestHeaderMap(t *testing.T) {
 		{"TTL microseconds", func(r *contract.Request) { r.TTL = 250 * time.Microsecond }, with(map[string]string{metadata.InferenceTTLHeaderKey: "250µs"})},
 		{"session id verbatim", func(r *contract.Request) { r.SessionID = "s-1" }, with(map[string]string{"x-session-id": "s-1"})},
 		{"empty session id is absent", func(r *contract.Request) { r.SessionID = "" }, base},
+		{"further headers verbatim", func(r *contract.Request) {
+			r.Headers = map[string]string{"x-session-token": "dGVzdA==", "cookie": "sid=s-1"}
+		}, with(map[string]string{"x-session-token": "dGVzdA==", "cookie": "sid=s-1"})},
+		{"further headers never override the built-in ones", func(r *contract.Request) {
+			r.Objective, r.SessionID = "o", "s-1"
+			r.Headers = map[string]string{metadata.ObjectiveKey: "other", "x-session-id": "other", "x-request-id": "other"}
+		}, with(map[string]string{metadata.ObjectiveKey: "o", "x-session-id": "s-1"})},
 		{"TTL zero is absent", func(r *contract.Request) { r.TTL = 0 }, base},
 		{"TTL negative is absent", func(r *contract.Request) { r.TTL = -time.Second }, base},
 	} {

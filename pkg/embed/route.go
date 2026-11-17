@@ -182,11 +182,17 @@ func classify(err error) (contract.RejectKind, string) {
 
 // requestHeaderMap is the request headers a client sends for req.
 func requestHeaderMap(req contract.Request) map[string]string {
-	h := map[string]string{
+	h := map[string]string{}
+	for k, v := range req.Headers { // the client's further headers; the ones set below win
+		h[k] = v
+	}
+	for k, v := range map[string]string{
 		":method":      "POST",
 		":path":        req.Path,
 		"content-type": "application/json",
 		"x-request-id": req.ID,
+	} {
+		h[k] = v
 	}
 	if req.Objective != "" {
 		h[metadata.ObjectiveKey] = req.Objective
