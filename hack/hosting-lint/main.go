@@ -274,6 +274,12 @@ func scanFile(pkg *packages.Package, f *ast.File, rel string, src []byte, uses m
 			}
 		case *ast.Ident:
 			if kind := classify(info.Uses[n]); kind != "" {
+				// A wait-group or errgroup Wait is a blocking wait the host cannot see unless the
+				// goroutine parks first (RTR-7): only a Wait with no rt.Park before it, in the same
+				// function, is a use.
+				if strings.HasSuffix(kind, ".Wait") && parksBefore(f, info, n.Pos()) {
+					return true
+				}
 				record(n.Pos(), kind)
 			}
 		}
@@ -292,9 +298,9 @@ var pkgFuncs = map[string]map[string]bool{
 
 // methods are flagged by "pkgpath.Type" of the (dereferenced) receiver.
 var methods = map[string]map[string]bool{
-	"sync.WaitGroup":                          {"Go": true},
+	"sync.WaitGroup":                          {"Go": true, "Wait": true},
 	"sync.Map":                                {"Range": true},
-	"golang.org/x/sync/errgroup.Group":        {"Go": true, "TryGo": true},
+	"golang.org/x/sync/errgroup.Group":        {"Go": true, "TryGo": true, "Wait": true},
 	"net/http.Client":                         {"Do": true, "Get": true, "Post": true, "Head": true, "PostForm": true},
 	"github.com/jellydator/ttlcache/v3.Cache": {"Start": true},
 }
@@ -368,6 +374,49 @@ func enclosing(f *ast.File, pos token.Pos) string {
 		return recvName(fd.Recv.List[0].Type) + "." + fd.Name.Name
 	}
 	return "<file>"
+}
+
+// parksBefore reports whether a statement list that holds pos (a block or a case clause, the
+// innermost one) has, before the statement containing pos, a statement that is itself a call to
+// hosting.Runtime.Park. A Park elsewhere in the function, such as the top of a loop, does not
+// make this Wait visible to the host: the wait must be preceded by its own Park.
+func parksBefore(f *ast.File, info *types.Info, pos token.Pos) bool {
+	var list []ast.Stmt
+	ast.Inspect(f, func(n ast.Node) bool {
+		if n == nil || pos < n.Pos() || pos >= n.End() {
+			return false
+		}
+		switch b := n.(type) {
+		case *ast.BlockStmt:
+			list = b.List
+		case *ast.CaseClause:
+			list = b.Body
+		case *ast.CommClause:
+			list = b.Body
+		}
+		return true
+	})
+	for _, st := range list {
+		if st.End() > pos {
+			break
+		}
+		es, ok := st.(*ast.ExprStmt)
+		if !ok {
+			continue
+		}
+		call, ok := es.X.(*ast.CallExpr)
+		if !ok {
+			continue
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || sel.Sel.Name != "Park" {
+			continue
+		}
+		if obj := info.Uses[sel.Sel]; obj != nil && obj.Pkg() != nil && strings.HasSuffix(obj.Pkg().Path(), "/pkg/common/hosting") {
+			return true
+		}
+	}
+	return false
 }
 
 func recvName(e ast.Expr) string {

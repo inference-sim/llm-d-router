@@ -78,7 +78,7 @@ func (c *Screener) Screen(ctx context.Context, request *fwksched.InferenceReques
 	// request in P/D must use the revision stamped by prefill; it must not depend
 	// on the two EPPs sharing a CrossReplicaSyncer.
 	if chosenRevision == "" {
-		chosenRevision = pickWeightedRevision(shares, hosting.From(ctx).Rand("disaggregatedset-rollout-screener").Float64(), hosting.From(ctx).Hosted())
+		chosenRevision = pickWeightedRevision(shares, hosting.From(ctx).Rand(PluginType).Float64(), hosting.From(ctx).Hosted())
 		if decisionID := revisionDecisionID(request); distribution.needsCoordination && decisionID != "" && chosenRevision != "" {
 			var err error
 			chosenRevision, err = c.getOrSetRevision(ctx, decisionID, chosenRevision)

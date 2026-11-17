@@ -255,6 +255,41 @@ func TestRequirements(t *testing.T) {
 				Hostname: "kubernetes.io/hostname", Rack: "topology.kubernetes.io/rack", Zone: "example.com/zone", Region: "topology.kubernetes.io/region"}}},
 			Disaggregates: true,
 		}},
+		{"session plugins", nil, `plugins:
+- type: session-affinity-scorer
+- type: session-affinity-filter
+  name: f
+  parameters:
+    strategy: session_id
+- type: session-affinity-scorer
+  name: s2
+  parameters:
+    strategy: session_id
+    sessionIdConfig:
+      sources:
+      - header: X-Tenant-Session
+      - attribute: session-id
+        producer: p
+- type: session-affinity-scorer
+  name: s3
+  parameters:
+    encodedEndpointHeaderConfig:
+      header: x-pod
+- type: session-id-producer
+  name: p
+  parameters:
+    cookieName: sid
+`, contract.Requirements{
+			Extractors: []contract.MetricsExtractor{{Name: "core-metrics-extractor", Implicit: true, EngineLabelKey: "llm-d.ai/engine-type", DefaultEngine: "vllm"}},
+			SessionIdentities: []contract.SessionIdentity{
+				{Name: "session-affinity-scorer", Type: "session-affinity-scorer", Strategy: "encoded_endpoint_header", Header: "x-session-token"},
+				{Name: "f", Type: "session-affinity-filter", Strategy: "session_id", Header: "x-session-id"},
+				{Name: "s2", Type: "session-affinity-scorer", Strategy: "session_id", Header: "x-tenant-session"},
+				{Name: "s2", Type: "session-affinity-scorer", Strategy: "session_id", Attribute: "session-id"},
+				{Name: "s3", Type: "session-affinity-scorer", Strategy: "encoded_endpoint_header", Header: "x-pod"},
+				{Name: "p", Type: "session-id-producer", Cookie: "sid"},
+			},
+		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			flags, err := parseFlags(append(tc.flags, defaultFlags...))

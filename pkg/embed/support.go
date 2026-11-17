@@ -28,6 +28,12 @@ import (
 
 	"github.com/llm-d/llm-d-router/pkg/epp/config"
 	fwkplugin "github.com/llm-d/llm-d-router/pkg/epp/framework/interface/plugin"
+	p2pconstants "github.com/llm-d/llm-d-router/pkg/epp/framework/plugins/requestcontrol/dataproducer/p2psource/constants"
+	sessionidconstants "github.com/llm-d/llm-d-router/pkg/epp/framework/plugins/requestcontrol/dataproducer/sessionid/constants"
+	"github.com/llm-d/llm-d-router/pkg/epp/framework/plugins/requestcontrol/screener/disaggregatedsetrollout"
+	filtersessionaffinity "github.com/llm-d/llm-d-router/pkg/epp/framework/plugins/scheduling/filter/sessionaffinity"
+	"github.com/llm-d/llm-d-router/pkg/epp/framework/plugins/scheduling/filter/utilization"
+	scoresessionaffinity "github.com/llm-d/llm-d-router/pkg/epp/framework/plugins/scheduling/scorer/sessionaffinity"
 )
 
 // refusedPrefix starts every refusal of a configuration the hosted router cannot run as the
@@ -42,6 +48,11 @@ const notAudited = "it has not been audited for the hosting runtime"
 // (the hosting-lint baseline holds no unrouted use of theirs). Any other type is refused before
 // its constructor runs, whatever the host allows.
 var audited = map[string]bool{
+	// session affinity: the session_id strategy's bindings age on the runtime's clock
+	// (scheduling/util/sessionaffinity), and its eviction sweep is a runtime goroutine
+	scoresessionaffinity.SessionAffinityType:  true,
+	filtersessionaffinity.SessionAffinityType: true,
+	sessionidconstants.SessionIDProducerType:  true,
 	// profile handlers and pickers
 	"single-profile-handler": true,
 	"disagg-profile-handler": true,
@@ -60,7 +71,7 @@ var audited = map[string]bool{
 	"prefix-cache-affinity-filter": true,
 	// a pure function of the scraped metrics and the in-flight count: no clock, goroutine, draw or
 	// map walk (the hosting-lint baseline holds no entry under filter/utilization)
-	"utilization-filter": true,
+	utilization.UtilizationFilterType: true,
 	// scorers
 	"queue-scorer":                 true,
 	"kv-cache-utilization-scorer":  true,
@@ -88,7 +99,7 @@ var audited = map[string]bool{
 	// its revision draw is the runtime's stream; it learns pods from the notifications
 	// Router.SetEndpoint delivers, and Router.checkPod refuses a pod it could not see (see
 	// podfeed.go). The host's assumption: one revision per set, no rollout simulated.
-	"disaggregatedset-rollout-screener": true,
+	disaggregatedsetrollout.PluginType: true,
 	// saturation detectors
 	"utilization-detector":    true,
 	"concurrency-detector":    true,
@@ -138,7 +149,7 @@ var hostingReasons = map[string]string{
 	"k8s-notification-source":        "it needs a Kubernetes controller manager",
 	"k8s-peer-discovery":             "it needs a Kubernetes API server",
 	"request-attribute-reporter":     "it has not been audited for the hosting runtime",
-	"p2p-source-producer":            "it asks a peer engine to pull KV blocks, which needs vLLM's P2P KV tier; the simulator does not model one",
+	p2pconstants.P2PSourcePluginType: "it asks a peer engine to pull KV blocks, which needs vLLM's P2P KV tier; the simulator does not model one",
 }
 
 // policy decides which plugin types a router instance may instantiate.
