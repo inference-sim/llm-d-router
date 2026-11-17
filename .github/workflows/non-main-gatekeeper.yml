@@ -18,7 +18,12 @@ jobs:
     steps:
       - name: Add labels when base branch is not main
         # llm-d-r is the inference-sim fork's long-lived hosting branch; PRs into it are its normal flow.
-        if: github.event.pull_request.base.ref != 'main' && github.event.pull_request.base.ref != 'llm-d-r'
+        # So are PRs into an m3/ integration branch: the fork's item pull requests are merged there
+        # by the integrator, and a hold label would turn the Hold gate red on every one of them.
+        if: >-
+          github.event.pull_request.base.ref != 'main' &&
+          github.event.pull_request.base.ref != 'llm-d-r' &&
+          !startsWith(github.event.pull_request.base.ref, 'm3/')
         uses: actions-ecosystem/action-add-labels@v1
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
