@@ -114,6 +114,7 @@ type Processor struct {
 	wg             sync.WaitGroup
 	isShuttingDown atomic.Bool
 	shutdownOnce   sync.Once
+	cleanupDone    atomic.Bool // set as the cleanup sweep returns; see waitForCleanup
 
 	// dropCounts accumulates non-dispatched request outcomes between periodic summary flushes.
 	// Written by both the main Run goroutine (enqueue, shutdown) and the runCleanupSweep goroutine (sweep),
@@ -268,12 +269,12 @@ func (p *Processor) Run(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			p.shutdown()
-			p.wg.Wait()
+			p.waitForCleanup(rt)
 			return
 		case item, ok := <-p.enqueueChan:
 			if !ok { // Should not happen in practice, but is a clean shutdown signal.
 				p.shutdown()
-				p.wg.Wait()
+				p.waitForCleanup(rt)
 				return
 			}
 			// This is a safeguard against logic errors in the distributor.
@@ -712,6 +713,7 @@ func (p *Processor) dispatchItem(itemAcc flowcontrol.QueueItemAccessor) error {
 // ("zombie" items) and removes them in batches.
 func (p *Processor) runCleanupSweep(ctx context.Context) {
 	defer p.wg.Done()
+	defer p.cleanupDone.Store(true)
 	logger := p.logger.WithName("runCleanupSweep")
 	defer utilruntime.HandleCrashWithLogger(logger)
 	logger.V(logutil.DEFAULT).Info("Cleanup sweep goroutine starting.")
