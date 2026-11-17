@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'v*'  # Runs when a tag like v0.1.0 is pushed
+      - '!v*-blis*'  # The fork's own tags (vX.Y.Z-blis.N) build and publish nothing here
 
 permissions:
   contents: read
