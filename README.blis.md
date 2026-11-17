@@ -1,3 +1,53 @@
+# llm-d-router, the BLIS fork (README.blis.md)
+
+This repository is `inference-sim/llm-d-router`, the fork of [llm-d's router](https://github.com/llm-d/llm-d-router)
+that BLIS hosts. `README.md` and the rest of the tree are upstream's and stay as upstream wrote
+them (X4). This file is the fork's own README. The design is at
+**https://inference-sim.github.io/blis-design/**, and it is the place to read everything not on
+this page.
+
+## What the fork is, owns, and never holds
+
+- It **is** llm-d's real router (the endpoint picker, EPP) made hostable: a simulator that embeds
+  it reads time, starts work, draws random numbers and makes calls only through
+  `pkg/common/hosting`, so a run under a simulated clock is deterministic.
+- It **owns** the hosting seam (`pkg/common/hosting`), the embed package `pkg/embed` that
+  implements blis-substrate's router `embed` contract, the reference EndpointPicker configurations
+  (`reference-configs/`), and the checks that keep these honest (`hack/hosting-lint`,
+  `hack/fork-policy`, `hack/embed-apidiff.sh`).
+- It **never holds** a routing rule of its own. It changes only how the router is hosted: the
+  routing, admission and flow-control algorithms are upstream's, byte for byte where the fork does
+  not touch the seam. The lines it changes in files shared with upstream are bounded by a patch
+  budget (`hack/hosting-lint/budget.txt`); new files are free.
+
+## How it connects
+
+- **Pins** blis-substrate (`go.mod`: the contracts it implements, at a release tag), and tracks one
+  upstream llm-d release (`upstream_base` in `hack/hosting-lint/budget.txt`), merged into the
+  `llm-d-r` branch and never rebased.
+- **Pinned by** inference-sim, which replaces `github.com/llm-d/llm-d-router` with this module at a
+  `vX.Y.Z-blis.N` tag (its one permitted `replace`); blis-config-search and accuracy-dashboard read
+  `reference-configs/policies.json` at a commit.
+- **Implements** blis-substrate's router `embed` contract (`pkg/embed`); it consumes no other BLIS
+  module.
+
+## Build, test and run
+
+The fork builds and tests as upstream does (`make help`, `make presubmit`; Go as `go.mod` names).
+The checks that are the fork's own:
+
+```sh
+go run ./hack/hosting-lint            # every clock, goroutine, random draw and call goes through the seam
+go run ./hack/hosting-lint -budget    # the patch budget against upstream_base
+go run ./hack/fork-policy history -base <rev> -head <rev>   # merge, never rebase (RTR-1)
+go test ./pkg/embed/ ./cmd/epp/runner/
+```
+
+The branch `llm-d-r` takes pull requests as merge commits. A release is a signed, annotated tag
+`vX.Y.Z-blis.N` cut by a person.
+
+---
+
 # Reference EndpointPicker configurations
 
 Complete `EndpointPickerConfig` files for the router policies that BLIS's router table offers as
@@ -5,7 +55,7 @@ nearest-policy targets, with an index (`policies.json`) that names each file, th
 configuration search can sweep, and the router's own value for each knob. Every file is accepted
 unchanged by the router's configuration loader, and a test routes requests through it.
 
-## Contents
+### Contents
 
 - [Who uses this](#who-uses-this)
 - [The files](#the-files)
@@ -15,7 +65,7 @@ unchanged by the router's configuration loader, and a test routes requests throu
 - [Reproduce the checks](#reproduce-the-checks)
 - [What this does not do](#what-this-does-not-do)
 
-## Who uses this
+### Who uses this
 
 The accuracy dashboard and the configuration search read the configuration of a router from this
 repository instead of writing one of their own, so that what BLIS runs is what the router parses
@@ -29,7 +79,7 @@ fork's changes, tested from `4bce4f8f2176eb62ce648feb411d8f1ac19b0790`, the comm
 their own; the commit that holds them is the pin, and the tests below fail at any commit where a
 file stops loading or stops behaving as the index says.
 
-## The files
+### The files
 
 "Verbatim" means a byte-for-byte copy of the router's file (a test shows it parses to the same
 document); "composed" means no router sample states the configuration, so the file is assembled
@@ -64,7 +114,7 @@ Not included: the router's simulation sample `deploy/config/sim-pd-epp-config.ya
 request time (`approximateprefix/plugin.go:48-56,170-176`), so the sample's setting is not what
 runs.
 
-## The llm-d guide files
+### The llm-d guide files
 
 `guides/` holds the router configuration of ten llm-d v1.0.0 guides
 (`378b42d18dabe0b9c4ced4e6f3670d93b52db08e`), each a byte-for-byte copy of the plugin config in the
@@ -114,7 +164,7 @@ directory; the range and the eight-space indent are in the table and in `source`
 sed -n '15,50p' "$G/wide-ep/router/wide-ep.values.yaml" | sed 's/^        //' | diff - reference-configs/guides/wide-ep.yaml
 ```
 
-## What round-robin does
+### What round-robin does
 
 The router at this commit has no policy that rotates strictly over endpoints, one per request.
 `round-robin` is the max-score picker with no scorer: every candidate scores 0, and the picker
@@ -143,7 +193,7 @@ So a substrate text that calls the policy round-robin and says it rotates is wro
 directions: it does not rotate, and it does not starve half an even-sized pool. It picks at random
 among equal scores. `strict_per_request_rotation` is `false` for every policy in the index.
 
-## Knobs
+### Knobs
 
 Each policy in `policies.json` has three lists.
 
@@ -189,7 +239,7 @@ The router's saturation detector drops an endpoint whose queue exceeds 5 or whos
 `maxPrefixTokensToMatch` in `pd-prefix-based` is 16384 in the sample and 131072 in the router
 (`approximateprefix/types.go:131-135`); `lruCapacityPerServer` is 31250 in both.
 
-## Reproduce the checks
+### Reproduce the checks
 
 From a checkout of this repository, with the Go toolchain `go.mod` names:
 
@@ -208,7 +258,7 @@ prefix, the sample disaggregates a new long prompt and not a cached or short one
 raising `nonCachedTokens` above the prompt length stops it, and every knob in the index moves a
 decision (and every ineffective parameter does not).
 
-## What this does not do
+### What this does not do
 
 - It changes no router behaviour: the diff is files, an index and tests.
 - The `round-robin`, `random-picker` and `least-active-requests` files are compositions, not
