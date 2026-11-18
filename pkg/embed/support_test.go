@@ -122,8 +122,10 @@ func TestRefusalPrecedence(t *testing.T) {
 }
 
 // TestSessionAffinityTypesAreHostedWhenTheHostAllowsThem: the three session-affinity types are
-// audited, so a host that allows them runs them; a type that is neither audited nor refused by the
-// fork is refused as not audited (inference-sim/blis-substrate#338).
+// audited, so when the host allows them the fork's refusal check passes them (no refusal reason);
+// a type that is neither audited nor refused by the fork is refused as not audited
+// (inference-sim/blis-substrate#338). The test checks the refusal decision only; it does not
+// build a router that runs the plugins.
 func TestSessionAffinityTypesAreHostedWhenTheHostAllowsThem(t *testing.T) {
 	p := policy{allow: func(string) (bool, string) { return true, "" }}
 	for _, typ := range []string{
