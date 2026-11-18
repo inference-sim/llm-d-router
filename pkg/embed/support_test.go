@@ -29,6 +29,9 @@ import (
 	contract "github.com/inference-sim/blis-substrate/contracts/embed"
 
 	fwkplugin "github.com/llm-d/llm-d-router/pkg/epp/framework/interface/plugin"
+	sessionidconstants "github.com/llm-d/llm-d-router/pkg/epp/framework/plugins/requestcontrol/dataproducer/sessionid/constants"
+	filtersessionaffinity "github.com/llm-d/llm-d-router/pkg/epp/framework/plugins/scheduling/filter/sessionaffinity"
+	scoresessionaffinity "github.com/llm-d/llm-d-router/pkg/epp/framework/plugins/scheduling/scorer/sessionaffinity"
 )
 
 // defaultFlags select a standalone pool of every pod labeled for serving.
@@ -114,6 +117,24 @@ func TestRefusalPrecedence(t *testing.T) {
 	for typ := range hostingReasons {
 		if audited[typ] {
 			t.Errorf("%s is both audited and refused by the fork", typ)
+		}
+	}
+}
+
+// TestSessionAffinityTypesAreHostedWhenTheHostAllowsThem: the three session-affinity types are
+// audited, so when the host allows them the fork's refusal check passes them (no refusal reason);
+// a type that is neither audited nor refused by the fork is refused as not audited
+// (inference-sim/blis-substrate#338). The test checks the refusal decision only; it does not
+// build a router that runs the plugins.
+func TestSessionAffinityTypesAreHostedWhenTheHostAllowsThem(t *testing.T) {
+	p := policy{allow: func(string) (bool, string) { return true, "" }}
+	for _, typ := range []string{
+		scoresessionaffinity.SessionAffinityType,
+		filtersessionaffinity.SessionAffinityType,
+		sessionidconstants.SessionIDProducerType,
+	} {
+		if reason, ok := p.refusal(typ); !ok || reason != "" {
+			t.Errorf("refusal(%s) = %q, %v; want the type hosted", typ, reason, ok)
 		}
 	}
 }

@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'v*'
+      - '!v*-blis*'  # The fork's own tags (vX.Y.Z-blis.N) assemble no notes here
 
 jobs:
   assemble:
