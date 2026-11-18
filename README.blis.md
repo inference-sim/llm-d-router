@@ -70,7 +70,7 @@ unchanged by the router's configuration loader, and a test routes requests throu
 The accuracy dashboard and the configuration search read the configuration of a router from this
 repository instead of writing one of their own, so that what BLIS runs is what the router parses
 (design section 2.2, X1: router configuration reaches the router parser unchanged). A consumer
-pins the commit of this repository that carries the index, reads `policies.json`, and passes the
+pins the commit of this repository that carries the index, reads `reference-configs/policies.json`, and passes the
 named file to the router as its configuration, with a swept knob changed in a copy.
 
 `reference-configs/policies.json` is the machine-readable entry point. Its `router` block states the release the
@@ -84,7 +84,7 @@ file stops loading or stops behaving as the index says.
 "Verbatim" means a byte-for-byte copy of the router's file (a test shows it parses to the same
 document); "composed" means no router sample states the configuration, so the file is assembled
 from the pieces the router documents, and the sources are the pieces. Nothing in a file is a value
-the router's sources do not state; where a knob has no value in a file, `policies.json` says
+the router's sources do not state; where a knob has no value in a file, `reference-configs/policies.json` says
 `not stated` and gives the router's default.
 
 | Policy name | File | Origin | Sources |
@@ -93,9 +93,9 @@ the router's sources do not state; where a knob has no value in a file, `policie
 | `round-robin` | `reference-configs/round-robin.yaml` | Composed | `pkg/epp/framework/plugins/scheduling/picker/maxscore/README.md:14,19`; `picker/maxscore/picker.go:88-130`; `picker/common.go:79-132` |
 | `round-robin` (P/D) | `reference-configs/round-robin-pd.yaml` | Composed; profile pair and decider as the router's well-known `pd-disaggregation` configuration | `test/integration/epp/wellknown_configs_test.go:108-135`; `pkg/epp/framework/plugins/scheduling/profilehandler/disagg/README.md:149-160` |
 | `random-picker` | `reference-configs/random-picker.yaml` | The frozen stable configuration of the random picker, without its defaulted parameters | `test/testdata/plugins/stable/v1/random-picker.yaml`; `pkg/epp/framework/plugins/scheduling/picker/random/picker.go:87-110` |
-| `random-picker` (P/D) | `reference-configs/random-picker-pd.yaml` | Composed as `round-robin-pd.yaml` | as above |
+| `random-picker` (P/D) | `reference-configs/random-picker-pd.yaml` | Composed as `reference-configs/round-robin-pd.yaml` | as above |
 | `least-active-requests` | `reference-configs/least-active-requests.yaml` | Composed | `pkg/epp/framework/plugins/scheduling/scorer/activerequest/README.md:3-11`; `active_request.go:99-113`; `cmd/epp/runner/runner.go:750` |
-| `least-active-requests` (P/D) | `reference-configs/least-active-requests-pd.yaml` | Composed as `round-robin-pd.yaml` | as above |
+| `least-active-requests` (P/D) | `reference-configs/least-active-requests-pd.yaml` | Composed as `reference-configs/round-robin-pd.yaml` | as above |
 | `pd-prefix-based` (P/D) | `reference-configs/pd-prefix-based.yaml` | Verbatim copy of the router's P/D sample | `deploy/config/pd-epp-config.yaml:1-37`; `profilehandler/disagg/README.md:90-123` |
 
 The P/D files for `round-robin`, `random-picker` and `least-active-requests` use
@@ -119,7 +119,7 @@ runs.
 `reference-configs/guides/` holds the router configuration of ten llm-d v1.0.0 guides
 (`378b42d18dabe0b9c4ced4e6f3670d93b52db08e`), each a byte-for-byte copy of the plugin config in the
 guide's Helm values file, dedented: the file a deployment of the guide runs. They are indexed in
-`policies.json` like the others, with the guide path and line range in `copied_from` and `source`.
+`reference-configs/policies.json` like the others, with the guide path and line range in `copied_from` and `source`.
 They are the files BLIS must run unedited (design X1); a copy that drops a plugin the host
 cannot run, such as the screener, is not one of them.
 
@@ -195,7 +195,7 @@ among equal scores. `strict_per_request_rotation` is `false` for every policy in
 
 ### Knobs
 
-Each policy in `policies.json` has three lists.
+Each policy in `reference-configs/policies.json` has three lists.
 
 - `knobs`: the parameters a configuration search may sweep. Each has `kind` (`scorer_weight` or
   `plugin_parameter`), the plugin, the value in the file or `not stated`, the router's default, the
@@ -250,7 +250,7 @@ go test ./pkg/embed/ -run 'RoundRobin|RandomPickerFiles|LeastActive|TestDefault|
 
 Expected: `ok` for both, in about a second each. The first loads every indexed file through the
 runner's own start-up path (phase one and two, experimental plugins refused unless the index says a file needs them), compares the
-built-in default with `default.yaml` plugin for plugin and weight for weight, and checks the index
+built-in default with `reference-configs/default.yaml` plugin for plugin and weight for weight, and checks the index
 against the files. The second gives each file to the hosted router with a deterministic runtime
 (`embedtest.NewRuntime(1)`) and routes requests: role filters hold, `least-active-requests` sends
 a request to the endpoint with none in flight, `default` avoids a long queue and follows a cached
