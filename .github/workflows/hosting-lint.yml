@@ -75,9 +75,9 @@ jobs:
             go-hosting-
       - name: go.mod and go.sum are tidy
         run: go mod tidy -diff
-      # setup-go installs the go line's version; this fails unless it is contracts/toolchain, and
-      # unless the go line is no higher than it (LIF-2).
-      - name: Go toolchain is contracts/toolchain of the pinned substrate
+      # setup-go installs the go line's version; this fails unless it is hack/fork-policy/toolchain,
+      # and unless the go line is no higher than it (LIF-2).
+      - name: Go toolchain is hack/fork-policy/toolchain
         run: go run ./hack/fork-policy toolchain
       # Type-checks the router packages (golang.org/x/tools/go/packages) and compares each direct
       # use against hack/hosting-lint/baseline.txt, keyed per use (file, function, kind, line text).
@@ -133,8 +133,8 @@ jobs:
           if [ -z "$version" ]; then echo "Dockerfile.builder names no GOLANGCI_LINT_VERSION"; exit 1; fi
           go run "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$version" run --config=./.golangci.yml --new-from-rev="$BASE"
 
-  # pkg/embed.New against the router conformance suite of the substrate version go.mod pins
-  # (github.com/inference-sim/blis-substrate/contracts/conformance/embedtest), RTR-3.
+  # pkg/embed.New against the router conformance suite in this repository (blisembed/embedtest),
+  # RTR-3. The suite's own tests run with it.
   conformance:
     needs: changes
     if: needs.changes.outputs.hosted == 'true'
@@ -144,15 +144,17 @@ jobs:
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: go.mod
-      - name: Embed conformance (contracts/conformance/embedtest against pkg/embed.New)
+      - name: Embed conformance (blisembed/embedtest against pkg/embed.New)
         run: go test ./pkg/embed/ -run 'TestConformance$' -count=1 -v
-      - name: The fork imports only blis-substrate's contracts/ packages (X7)
-        run: go test ./pkg/embed/ -run 'TestImportsOnlySubstrateContracts$' -count=1 -v
+      - name: The hosting contract and its suite
+        run: go test ./blisembed/... -count=1
+      - name: The fork imports no github.com/inference-sim/ package (X7)
+        run: go test ./pkg/embed/ -run 'TestImportsNoInferenceSimPackage$' -count=1 -v
 
   # The fork's versioned surface is pkg/embed.New, its implementation of the embed contract.
   # Between v*-blis* tags on one upstream major both change only compatibly (RTR-3); the script
   # explains the first release (a tag before pkg/embed passes) and a move of the contract between
-  # modules.
+  # modules (the blis-substrate and blis-schemas pins, and blisembed in this repository).
   api-diff:
     runs-on: ubuntu-latest
     steps:

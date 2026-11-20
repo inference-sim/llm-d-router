@@ -24,9 +24,10 @@ import (
 	"sort"
 	"strings"
 
-	contract "github.com/inference-sim/blis-substrate/contracts/embed"
 	"github.com/spf13/pflag"
 	"sigs.k8s.io/yaml"
+
+	contract "github.com/llm-d/llm-d-router/blisembed"
 
 	reqcommon "github.com/llm-d/llm-d-router/pkg/common/request"
 	sessionidconstants "github.com/llm-d/llm-d-router/pkg/epp/framework/plugins/requestcontrol/dataproducer/sessionid/constants"

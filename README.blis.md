@@ -12,7 +12,7 @@ this page.
   it reads time, starts work, draws random numbers and makes calls only through
   `pkg/common/hosting`, so a run under a simulated clock is deterministic.
 - It **owns** the hosting seam (`pkg/common/hosting`), the embed package `pkg/embed` that
-  implements blis-substrate's router `embed` contract, the reference EndpointPicker configurations
+  implements the hosting contract `blisembed` (with its conformance suite `blisembed/embedtest`), the reference EndpointPicker configurations
   (`reference-configs/`), and the checks that keep these honest (`hack/hosting-lint`,
   `hack/fork-policy`, `hack/embed-apidiff.sh`).
 - It **never holds** a routing rule of its own. It changes only how the router is hosted: the
@@ -22,14 +22,16 @@ this page.
 
 ## How it connects
 
-- **Pins** blis-substrate (`go.mod`: the contracts it implements, at a release tag), and tracks one
-  upstream llm-d release (`upstream_base` in `hack/hosting-lint/budget.txt`), merged into the
-  `llm-d-r` branch and never rebased.
+- **Owns** the hosting contract: `blisembed/`, with its conformance suite `blisembed/embedtest/`.
+  It depends on no BLIS module (`pkg/embed`'s `TestImportsNoInferenceSimPackage`). The contract was
+  copied here from blis-substrate `contracts/embed` and `contracts/conformance/embedtest` at commit
+  `b6748ca9d757f149ba760cf821f96feed3bbf5bf`, and changes here from then on.
+- **Tracks** one upstream llm-d release (`upstream_base` in `hack/hosting-lint/budget.txt`), merged
+  into the `llm-d-r` branch and never rebased.
 - **Pinned by** inference-sim, which replaces `github.com/llm-d/llm-d-router` with this module at a
   `vX.Y.Z-blis.N` tag (its one permitted `replace`); blis-config-search and accuracy-dashboard read
   `reference-configs/policies.json` at a commit.
-- **Implements** blis-substrate's router `embed` contract (`pkg/embed`); it consumes no other BLIS
-  module.
+- **Implements** the `blisembed` contract (`pkg/embed`); it consumes no BLIS module.
 
 ## Build, test and run
 
@@ -40,7 +42,7 @@ The checks that are the fork's own:
 go run ./hack/hosting-lint            # every clock, goroutine, random draw and call goes through the seam
 go run ./hack/hosting-lint -budget    # the patch budget against upstream_base
 go run ./hack/fork-policy history -base <rev> -head <rev>   # merge, never rebase (RTR-1)
-go test ./pkg/embed/ ./cmd/epp/runner/
+go test ./blisembed/... ./pkg/embed/ ./cmd/epp/runner/
 ```
 
 The branch `llm-d-r` takes pull requests as merge commits. A release is a signed, annotated tag

@@ -20,11 +20,12 @@ import (
 	"fmt"
 	"sort"
 
-	contract "github.com/inference-sim/blis-substrate/contracts/embed"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	contract "github.com/llm-d/llm-d-router/blisembed"
 
 	fwkdl "github.com/llm-d/llm-d-router/pkg/epp/framework/interface/datalayer"
 	fwkplugin "github.com/llm-d/llm-d-router/pkg/epp/framework/interface/plugin"

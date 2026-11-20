@@ -25,8 +25,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/inference-sim/blis-substrate/contracts/conformance/embedtest"
-	contract "github.com/inference-sim/blis-substrate/contracts/embed"
+	contract "github.com/llm-d/llm-d-router/blisembed"
+	"github.com/llm-d/llm-d-router/blisembed/embedtest"
 
 	fwkplugin "github.com/llm-d/llm-d-router/pkg/epp/framework/interface/plugin"
 	sessionidconstants "github.com/llm-d/llm-d-router/pkg/epp/framework/plugins/requestcontrol/dataproducer/sessionid/constants"

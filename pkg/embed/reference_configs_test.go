@@ -30,9 +30,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/inference-sim/blis-substrate/contracts/conformance/embedtest"
-	contract "github.com/inference-sim/blis-substrate/contracts/embed"
 	"sigs.k8s.io/yaml"
+
+	contract "github.com/llm-d/llm-d-router/blisembed"
+	"github.com/llm-d/llm-d-router/blisembed/embedtest"
 )
 
 func refConfig(t *testing.T, name string) string {

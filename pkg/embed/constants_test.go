@@ -3,7 +3,7 @@ package embed
 import (
 	"testing"
 
-	contract "github.com/inference-sim/blis-substrate/contracts/embed"
+	contract "github.com/llm-d/llm-d-router/blisembed"
 
 	sessionidconstants "github.com/llm-d/llm-d-router/pkg/epp/framework/plugins/requestcontrol/dataproducer/sessionid/constants"
 	"github.com/llm-d/llm-d-router/pkg/epp/framework/plugins/scheduling/util/sessionaffinity"

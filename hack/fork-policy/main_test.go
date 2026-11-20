@@ -357,9 +357,9 @@ func TestCompareToolchain(t *testing.T) {
 	}{
 		{"1.27.2", "go1.27.2", "go1.27.2", nil},
 		{"1.27.0", "go1.27.2", "go1.27.2", nil},
-		{"1.28.0", "go1.27.2", "go1.27.2", []string{"above contracts/toolchain"}},
+		{"1.28.0", "go1.27.2", "go1.27.2", []string{"above hack/fork-policy/toolchain"}},
 		{"1.27.2", "go1.27.3", "go1.27.2", []string{"the go command is go1.27.3"}},
-		{"1.28", "go1.26.10", "go1.27.2", []string{"above contracts/toolchain", "the go command is go1.26.10"}},
+		{"1.28", "go1.26.10", "go1.27.2", []string{"above hack/fork-policy/toolchain", "the go command is go1.26.10"}},
 	} {
 		got, err := compareToolchain(tc.goLine, tc.running, tc.want)
 		if err != nil {
@@ -375,7 +375,7 @@ func TestCompareToolchain(t *testing.T) {
 		}
 	}
 	if _, err := compareToolchain("1.27.2", "go1.27.2", "1.27.2"); err == nil {
-		t.Error("contracts/toolchain without the go prefix: want an error")
+		t.Error("hack/fork-policy/toolchain without the go prefix: want an error")
 	}
 }
 

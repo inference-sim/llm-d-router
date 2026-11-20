@@ -13,6 +13,7 @@ check() { # name want paths...
 check "a hosted package"            true  pkg/embed/support.go
 check "an upstream-owned package"   true  pkg/epp/framework/plugins/scorer/foo.go
 check "the reference configs"       true  reference-configs/endpoint-picker/a.yaml
+check "the hosting contract"        true  blisembed/embedtest/runtime.go
 check "the command"                 true  cmd/epp/main.go
 check "a check under hack"          true  hack/hosting-lint/baseline.txt
 check "the module files"            true  go.sum

@@ -26,6 +26,10 @@
 #      the packages are compared across modules, an incompatible change reported, a compatible
 #      one passes;
 #   5. the same pin on both sides: no change, nothing compared;
+#   5b. the contract moved into this module (package blisembed): the tag pins blis-substrate, HEAD
+#      has blisembed in the tree and requires no contract module; the packages are compared
+#      across the two places, an incompatible change reported, a compatible one passes. When the
+#      tag also has blisembed, the two trees are compared (no module download);
 #   6. accept-break (--accept-break owner/repo#N, or ACCEPT_BREAK): on the known-bad change it
 #      prints the change, names the review set and passes; a missing, empty or malformed id fails;
 #      without the flag the known-bad change still fails; a non-API error (a contract version
@@ -96,6 +100,60 @@ printf '{"Version":"v0.9.0","Time":"2026-01-01T00:00:00Z"}\n' >"$work/proxy/$SUB
 
 fails=0
 
+# run_tree_case name want(0|1) want_text old_mod old_ver_or_empty old_src new_src [new_major]
+# The contract is in the tree of HEAD (blisembed/embed.go holds new_src), and requires no contract
+# module. At the tag it is either pinned in module old_mod at old_ver, or, when old_ver is empty,
+# in the tree too (blisembed/embed.go holds old_src).
+run_tree_case() {
+  local name=$1 want=$2 text=$3 old_mod=$4 old_ver=$5 old_src=$6 new_src=$7 major=${8:-}
+  local repo=$work/repo-$name out status
+  mkdir -p "$repo/hack/hosting-lint" "$repo/blisembed"
+  cp "$script" "$repo/hack/embed-apidiff.sh"
+  (
+    cd "$repo"
+    git init -q
+    git config user.email test@example.invalid
+    git config user.name test
+    git config commit.gpgsign false
+    git commit -q --allow-empty -m "upstream 1"
+    git tag v1.0.0
+    u1=$(git rev-parse HEAD)
+    git commit -q --allow-empty -m "upstream 2"
+    git tag v2.0.0
+    u2=$(git rev-parse HEAD)
+    printf 'upstream_base = %s\n' "$u1" >hack/hosting-lint/budget.txt
+    if [ -n "$old_ver" ]; then
+      printf 'module example.com/host\n\ngo 1.24\n\nrequire %s %s\n' "$old_mod" "$old_ver" >go.mod
+      rmdir blisembed
+    else
+      printf 'module example.com/host\n\ngo 1.24\n' >go.mod
+      printf '%s\n' "$old_src" >blisembed/embed.go
+    fi
+    git add -A
+    git commit -q -m "fork release"
+    git tag v1.0.0-blis.1
+    if [ -n "$major" ]; then printf 'upstream_base = %s\n' "$u2" >hack/hosting-lint/budget.txt; fi
+    printf 'module example.com/host\n\ngo 1.24\n' >go.mod
+    mkdir -p blisembed
+    printf '%s\n' "$new_src" >blisembed/embed.go
+    git add -A
+    git commit -q -m "after the release"
+  )
+  status=0
+  out=$(cd "$repo" && bash hack/embed-apidiff.sh contract 2>&1) || status=$?
+  if [ "$want" = 0 ] && [ "$status" != 0 ] || [ "$want" != 0 ] && [ "$status" = 0 ]; then
+    echo "FAIL $name: exit $status, want $([ "$want" = 0 ] && echo 0 || echo non-zero)"
+    echo "$out" | sed 's/^/    /'
+    fails=$((fails + 1))
+  elif ! grep -Fq -- "$text" <<<"$out"; then
+    echo "FAIL $name: output lacks \"$text\""
+    echo "$out" | sed 's/^/    /'
+    fails=$((fails + 1))
+  else
+    echo "ok   $name (exit $status)"
+  fi
+}
+
 # run_case name want(0|1) want_text old_mod old_ver new_mod new_ver [new_major] [script args]
 # The script args (word-split) come before the mode.
 run_case() {
@@ -152,6 +210,14 @@ run_case moved-incompatible 1 "$SCHEMAS v0.7.0 embed -> $SUBSTRATE v0.2.0 contra
 run_case moved-compatible 0 "$SCHEMAS v0.7.0 embed -> $SUBSTRATE v0.3.0 contracts/embed" $SCHEMAS v0.7.0 $SUBSTRATE v0.3.0
 # 5. Control: the same pin compares nothing.
 run_case unchanged 0 "no change" $SUBSTRATE v0.1.0 $SUBSTRATE v0.1.0
+
+# 5b. The contract moved into this module as blisembed, in the tree.
+run_tree_case tree-moved-incompatible 1 "incompatible changes in embed contract ($SUBSTRATE v0.1.0 contracts/embed -> example.com/host blisembed (in-tree))" $SUBSTRATE v0.1.0 "" "$ADD_METHOD"
+run_tree_case tree-moved-compatible 0 "no incompatible change since v1.0.0-blis.1" $SUBSTRATE v0.1.0 "" "$ADD_FUNC"
+run_tree_case tree-moved-major 0 "is a new major" $SUBSTRATE v0.1.0 "" "$ADD_METHOD" major
+# The tag already has blisembed: the two trees are compared.
+run_tree_case tree-incompatible 1 "incompatible changes in embed contract (example.com/host blisembed (in-tree) -> example.com/host blisembed (in-tree))" "" "" "$BASE" "$ADD_METHOD"
+run_tree_case tree-compatible 0 "no incompatible change since v1.0.0-blis.1" "" "" "$BASE" "$ADD_FUNC"
 
 # 6. Accept-break. The known-bad change passes under a valid review-set id, and is still printed.
 run_case ab-valid 0 "ACCEPTED BREAK: the incompatible changes in embed contract" $SUBSTRATE v0.1.0 $SUBSTRATE v0.2.0 "" "--accept-break inference-sim/blis-substrate#42"
