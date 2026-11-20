@@ -243,7 +243,6 @@ type env struct {
 	eps      []embed.Endpoint
 	busy     map[string]bool // by address: the engine reports saturation
 	blocks   int             // block size of KV events
-	started  int             // goroutines live before the router existed
 	nextReq  int
 	flights  []*outcome
 	skipped  string // why the part did not run, when it did not
@@ -372,7 +371,7 @@ func (o *outcome) String() string {
 	case o.rej != nil:
 		return fmt.Sprintf("rejected %s (%q)", o.rej.Kind, o.rej.Msg)
 	default:
-		return fmt.Sprintf("dispatched to %s", o.decision.Endpoint)
+		return "dispatched to " + o.decision.Endpoint
 	}
 }
 

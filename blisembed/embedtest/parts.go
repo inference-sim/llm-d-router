@@ -346,16 +346,16 @@ func partKV(e *env) {
 		}
 	}
 
-	ingest(b, e.stored(prompt, blocks, 0))
-	holds(b, e.hashes(0, blocks), "after its blocks were stored")
+	ingest(b, e.stored(prompt, blocks))
+	holds(b, e.hashes(blocks), "after its blocks were stored")
 	goes(b, "the only endpoint that published the prompt's blocks")
 
-	ingest(b, embed.BlockRemoved{Hashes: e.hashes(0, blocks)})
+	ingest(b, embed.BlockRemoved{Hashes: e.hashes(blocks)})
 	holds(b, nil, "after its blocks were removed")
-	ingest(a, e.stored(prompt, 2, 0))
+	ingest(a, e.stored(prompt, 2))
 	goes(a, "the other endpoint removed the blocks it had published")
 
-	ingest(b, e.stored(prompt, blocks, 0))
+	ingest(b, e.stored(prompt, blocks))
 	goes(b, "it published the longer prefix")
 	if err := e.r.ClearKVEvents(e.ctx(), b); err != nil {
 		e.fail("ClearKVEvents(%s): %v", b, err)
@@ -369,7 +369,7 @@ func partKV(e *env) {
 	// contract does not define is refused, not decoded as vLLM's.
 	named := func(kind string) error {
 		return e.r.IngestKVEvents(e.ctx(), b, e.s.Model,
-			embed.KVBatch{Timestamp: e.rt.Now(), Engine: kind, Events: []embed.KVEvent{e.stored(prompt, blocks, 0)}})
+			embed.KVBatch{Timestamp: e.rt.Now(), Engine: kind, Events: []embed.KVEvent{e.stored(prompt, blocks)}})
 	}
 	for _, kind := range []string{"", embed.EngineVLLM, embed.EngineSGLang} {
 		if err := named(kind); err != nil {
@@ -378,22 +378,22 @@ func partKV(e *env) {
 	}
 	e.rt.Settle()
 	e.rt.Advance(e.s.Observe)
-	holds(b, e.hashes(0, blocks), "after batches that named vllm, sglang and no engine")
+	holds(b, e.hashes(blocks), "after batches that named vllm, sglang and no engine")
 	if err := named("tensorrt"); err == nil {
 		e.fail("IngestKVEvents accepted Engine \"tensorrt\", which the contract does not define; it must refuse it")
 	}
 }
 
-// stored is a BlockStored of the first n blocks of prompt, keyed from base.
-func (e *env) stored(prompt []uint32, n int, base uint64) embed.BlockStored {
-	return embed.BlockStored{Hashes: e.hashes(base, n), Tokens: prompt[:n*e.blocks], BlockSize: e.blocks}
+// stored is a BlockStored of the first n blocks of prompt.
+func (e *env) stored(prompt []uint32, n int) embed.BlockStored {
+	return embed.BlockStored{Hashes: e.hashes(n), Tokens: prompt[:n*e.blocks], BlockSize: e.blocks}
 }
 
-// hashes are n engine block keys from base: non-zero, as zero is vLLM's "no parent".
-func (e *env) hashes(base uint64, n int) []uint64 {
+// hashes are n engine block keys: non-zero, as zero is vLLM's "no parent".
+func (e *env) hashes(n int) []uint64 {
 	out := make([]uint64, n)
 	for i := range out {
-		out[i] = 0x1000 + base + uint64(i)
+		out[i] = 0x1000 + uint64(i)
 	}
 	return out
 }

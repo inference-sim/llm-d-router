@@ -380,7 +380,7 @@ func (s *stub) pick(c []*stubEndpoint, prompt []uint32) *stubEndpoint {
 	}
 	if s.cfg.KV {
 		keys := chainKeys(prompt, 16)
-		best, bestN := []*stubEndpoint(nil), -1
+		best, bestN := make([]*stubEndpoint, 0, 2), -1
 		for _, e := range c {
 			n := 0
 			for n < len(keys) && e.chains[keys[n]] {
@@ -388,7 +388,7 @@ func (s *stub) pick(c []*stubEndpoint, prompt []uint32) *stubEndpoint {
 			}
 			switch {
 			case n > bestN:
-				best, bestN = []*stubEndpoint{e}, n
+				best, bestN = append(best[:0], e), n
 			case n == bestN:
 				best = append(best, e)
 			}
