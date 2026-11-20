@@ -222,7 +222,7 @@ fork)
         sed -e "s#\"$(embedtest_pkg "$old_mod" "$old_pkg")\"#\"$(embedtest_pkg "$new_mod" "$new_pkg")\"#" -e "s#\"$old_imp\"#\"$new_imp\"#" "$f" >"$f.moved"
         mv "$f.moved" "$f"
       done
-      if grep -rq "\"$old_mod" pkg/embed; then
+      if grep -rEq "^[[:space:]]*([A-Za-z_.]+[[:space:]]+)?\"$old_mod[/\"]" pkg/embed; then
         echo "pkg/embed at $prev still names $old_mod after the move" >&2
         exit 1
       fi
