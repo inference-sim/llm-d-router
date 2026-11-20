@@ -2,7 +2,7 @@ name: Apply kind/area labels and milestone from PR body
 
 on:
   pull_request_target:
-    types: [opened, edited, reopened]
+    types: [opened, reopened]
     branches:
       - main
 

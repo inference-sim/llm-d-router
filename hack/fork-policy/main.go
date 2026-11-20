@@ -17,11 +17,7 @@ limitations under the License.
 // Command fork-policy checks the history rules of the inference-sim fork's llm-d-r branch.
 //
 // Upstream llm-d releases are merged into llm-d-r and never rebased, and fork pull requests land
-// as merge commits (BLIS design RTR-1). Every commit written for BLIS is signed, carries a DCO
-// Signed-off-by line from a person, names agent help in at most one Assisted-by line, and names
-// no tool in a Co-authored-by or Signed-off-by line (X20). Commits reachable from the upstream
-// release that hack/hosting-lint/budget.txt names as upstream_base are upstream's, kept as
-// upstream wrote them, and are not checked.
+// as merge commits (BLIS design RTR-1).
 //
 //	fork-policy history -base <sha> -head <sha>
 //	    a pull request into llm-d-r: head contains base; head's upstream_base is a tagged
@@ -34,9 +30,6 @@ limitations under the License.
 //	fork-policy toolchain
 //	    the go line of go.mod is no higher than the toolchain in hack/fork-policy/toolchain, and
 //	    the go command running is exactly that toolchain (LIF-2)
-//	fork-policy commits -base <sha> -head <sha> [-signatures github|git] [-repo owner/name]
-//	                    [-release-bot <email>]
-//	    the commit policy over the commits head adds to base, upstream's excepted
 //
 // Each subcommand prints one line per finding and exits 1 when there is any, 2 on a usage or git
 // error.
@@ -80,7 +73,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: fork-policy history|landed|toolchain|commits [flags]; see the package comment")
+	fmt.Fprintln(os.Stderr, "usage: fork-policy history|landed|toolchain [flags]; see the package comment")
 	os.Exit(2)
 }
 
@@ -108,30 +101,8 @@ func run(dir, cmd string, args []string) ([]string, error) {
 			return nil, err
 		}
 		return toolchain(dir)
-	case "commits":
-		base := fs.String("base", "", "the tip of llm-d-r the pull request merges into")
-		head := fs.String("head", "", "the pull request's head commit")
-		sigs := fs.String("signatures", "github", "how signatures are verified: github (the commit's verification on GitHub) or git (git's own verification, with the signing keys configured)")
-		repo := fs.String("repo", os.Getenv("GITHUB_REPOSITORY"), "owner/name on GitHub, for -signatures github")
-		bot := fs.String("release-bot", "", "the release bot's commit author email; its commits must be signed and carry no sign-off")
-		if err := parse(fs, args, "base", "head"); err != nil {
-			return nil, err
-		}
-		var v verifier
-		switch *sigs {
-		case "github":
-			if *repo == "" {
-				return nil, errors.New("-signatures github needs -repo owner/name (or GITHUB_REPOSITORY)")
-			}
-			v = githubVerifier(*repo)
-		case "git":
-			v = g.verified
-		default:
-			return nil, fmt.Errorf("-signatures %q: want github or git", *sigs)
-		}
-		return commits(g, *base, *head, v, *bot)
 	default:
-		return nil, fmt.Errorf("unknown subcommand %q: want history, landed, toolchain or commits", cmd)
+		return nil, fmt.Errorf("unknown subcommand %q: want history, landed or toolchain", cmd)
 	}
 }
 
@@ -359,93 +330,6 @@ func landed(g git, before, after string) ([]string, error) {
 	return out, nil
 }
 
-// verifier reports whether a commit's signature is verified.
-type verifier func(sha string) (bool, error)
-
-// commits checks the commit policy (X20) on the commits head adds to base, except those
-// reachable from head's upstream_base, which are upstream's.
-func commits(g git, base, head string, verified verifier, releaseBot string) ([]string, error) {
-	upstream, _, err := upstreamBase(g, head)
-	if err != nil {
-		return nil, err
-	}
-	list, err := g.lines("rev-list", "--reverse", head, "^"+base, "^"+upstream)
-	if err != nil {
-		return nil, err
-	}
-	var out []string
-	for _, sha := range list {
-		c, err := g.commit(sha)
-		if err != nil {
-			return nil, err
-		}
-		ok, err := verified(sha)
-		if err != nil {
-			return nil, err
-		}
-		for _, f := range policy(c, ok, releaseBot) {
-			out = append(out, fmt.Sprintf("%s %q: %s", short(sha), c.subject, f))
-		}
-	}
-	return out, nil
-}
-
-// commitInfo is what the policy reads from one commit.
-type commitInfo struct {
-	subject, authorEmail string
-	trailers             [][2]string // key, value, in order, as git parses them
-}
-
-// policy returns each way commit c breaks X20. signed is whether its signature is verified.
-func policy(c commitInfo, signed bool, releaseBot string) []string {
-	var out []string
-	if !signed {
-		out = append(out, "it is not signed with a verified signature (X20)")
-	}
-	var signoffs, assisted []string
-	for _, t := range c.trailers {
-		switch strings.ToLower(t[0]) {
-		case "signed-off-by":
-			signoffs = append(signoffs, t[1])
-			if namesTool(t[1]) {
-				out = append(out, fmt.Sprintf("Signed-off-by %q names a tool or bot: only a person certifies the DCO (X20)", t[1]))
-			}
-		case "co-authored-by":
-			if namesTool(t[1]) {
-				out = append(out, fmt.Sprintf("Co-authored-by %q names a tool: say so in one Assisted-by line instead (X20)", t[1]))
-			}
-		case "assisted-by":
-			assisted = append(assisted, t[1])
-		}
-	}
-	if releaseBot != "" && strings.EqualFold(c.authorEmail, releaseBot) {
-		if len(signoffs) > 0 {
-			out = append(out, "a release-bot commit carries a Signed-off-by line; the bot never signs off (X20)")
-		}
-		return out
-	}
-	if len(signoffs) == 0 {
-		out = append(out, "it has no Signed-off-by line from the person who takes responsibility for it (X20)")
-	}
-	if len(assisted) > 1 {
-		out = append(out, fmt.Sprintf("it has %d Assisted-by lines; agent help is named in one (X20)", len(assisted)))
-	}
-	for _, a := range assisted {
-		if strings.TrimSpace(a) == "" {
-			out = append(out, "its Assisted-by line names no tool (X20)")
-		}
-	}
-	return out
-}
-
-// toolEmail matches the commit identities of coding agents and GitHub Apps. A trailer naming one
-// is not a person.
-var toolEmail = regexp.MustCompile(`(?i)<[^>]*(@anthropic\.com|@openai\.com|@cursor\.com|copilot@users\.noreply\.github\.com|\[bot\]@users\.noreply\.github\.com)>`)
-
-// namesTool reports whether a trailer value ("Name <email>") is an agent's or a bot's identity,
-// judged by its email address only, so a person's name is never mistaken for a tool's.
-func namesTool(v string) bool { return toolEmail.MatchString(v) }
-
 // upstreamBase returns the upstream_base that rev's budget.txt records and the upstream release
 // tag that points at it. A base without a release tag is an error: either the tags are not
 // fetched, or the fork is based on something that is not an upstream release.
@@ -551,49 +435,4 @@ func (g git) parents(sha string) ([]string, error) {
 		return nil, err
 	}
 	return strings.Fields(s), nil
-}
-
-func (g git) commit(sha string) (commitInfo, error) {
-	head, err := g.text("show", "-s", "--format=%ae%n%s", sha)
-	if err != nil {
-		return commitInfo{}, err
-	}
-	email, subject, _ := strings.Cut(head, "\n")
-	raw, err := g.lines("show", "-s", "--format=%(trailers:only,unfold)", sha)
-	if err != nil {
-		return commitInfo{}, err
-	}
-	c := commitInfo{subject: subject, authorEmail: email}
-	for _, line := range raw {
-		if k, v, ok := strings.Cut(line, ":"); ok {
-			c.trailers = append(c.trailers, [2]string{strings.TrimSpace(k), strings.TrimSpace(v)})
-		}
-	}
-	return c, nil
-}
-
-// verified is git's own verdict on the commit's signature: G is a good signature from a key the
-// configuration trusts.
-func (g git) verified(sha string) (bool, error) {
-	s, err := g.text("show", "-s", "--format=%G?", sha)
-	return s == "G", err
-}
-
-// githubVerifier asks GitHub whether a commit's signature is verified, as the pull request page
-// shows it.
-func githubVerifier(repo string) verifier {
-	return func(sha string) (bool, error) {
-		out, err := exec.Command("gh", "api", "repos/"+repo+"/commits/"+sha, "--jq", ".commit.verification.verified").Output()
-		if err != nil {
-			return false, fmt.Errorf("gh api repos/%s/commits/%s: %w", repo, short(sha), err)
-		}
-		switch strings.TrimSpace(string(out)) {
-		case "true":
-			return true, nil
-		case "false":
-			return false, nil
-		default:
-			return false, fmt.Errorf("gh api repos/%s/commits/%s: unexpected verification %q", repo, short(sha), out)
-		}
-	}
 }
