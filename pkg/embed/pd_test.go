@@ -23,8 +23,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/inference-sim/blis-substrate/contracts/conformance/embedtest"
-	contract "github.com/inference-sim/blis-substrate/contracts/embed"
+	contract "github.com/llm-d/llm-d-router/blisembed"
+	"github.com/llm-d/llm-d-router/blisembed/embedtest"
 )
 
 // pdConfig always disaggregates: the prefill profile picks a prefill pod, the decode profile a

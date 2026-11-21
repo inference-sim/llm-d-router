@@ -35,12 +35,15 @@
 # but empty, so the mode cannot be left on by accident: every run that uses it names the review
 # set in its output. Without the flag or variable nothing changes.
 #
-# The contract lives in one of two modules: github.com/inference-sim/blis-substrate, package
-# contracts/embed, or, up to v1.0.0-blis.2, github.com/inference-sim/blis-schemas, package embed.
-# When the tag pins the contract in another module than HEAD does, the contract check compares the
-# two packages across modules, and the fork check compares pkg/embed as the tag wrote it, with its
-# contract imports and requirement moved to HEAD's module, against pkg/embed now. The contract
-# check covers the contract itself, so the fork check reports only changes in pkg/embed.
+# The contract lives in one of three places: package blisembed of this module (the fork owns it), or
+# a module the fork required: github.com/inference-sim/blis-substrate, package contracts/embed, or,
+# up to v1.0.0-blis.2, github.com/inference-sim/blis-schemas, package embed.
+# When the tag has the contract in another place than HEAD does, the contract check compares the
+# two packages across places, and the fork check compares pkg/embed as the tag wrote it, with its
+# contract imports and requirement moved to HEAD's place, against pkg/embed now. The contract
+# check covers the contract itself, so the fork check reports only changes in pkg/embed. When the
+# tag and HEAD both have blisembed, the contract check compares blisembed at the tag with blisembed
+# now, in the tree, with no module download.
 #
 # The first release under this rule needs no exception: when the tag has no pkg/embed (v1.0.0-blis
 # predates it) or pins no contract module, there is no previous surface, every change is an
@@ -147,7 +150,9 @@ compare() {
 }
 
 # contract prints the module, its version and the contract's package directory in the module, for
-# the go.mod file given, or nothing when it requires neither contract module.
+# the go.mod file given, or nothing when it requires neither contract module and has no blisembed
+# (the second argument is 1 when the tree of that go.mod has one). A blisembed in the tree is
+# printed as this module, version "tree" and ./blisembed.
 contract() {
   local mod path ver
   mod=$(go mod edit -json "$1")
@@ -161,13 +166,36 @@ contract() {
       return 0
     fi
   done
+  if [ "${2:-0}" = 1 ]; then
+    echo "$(jq -r .Module.Path <<<"$mod") tree ./blisembed"
+  fi
 }
 
+# embedtest_pkg prints the import path of the conformance package of the contract in module $1 at
+# package directory $2 (./blisembed or ./contracts/embed or ./embed).
+embedtest_pkg() {
+  case "$2" in
+  ./blisembed) echo "$1/blisembed/embedtest" ;;
+  ./contracts/embed) echo "$1/contracts/conformance/embedtest" ;;
+  *) echo "$1/${2#./}/embedtest" ;;
+  esac
+}
+
+# label names a contract location in a report.
+label() {
+  if [ "$2" = tree ]; then echo "$1 ${3#./} (in-tree)"; else echo "$1 $2 ${3#./}"; fi
+}
+
+root=$PWD
 git show "$prev:go.mod" >"$work/prev.mod"
-read -r old_mod old_ver old_pkg < <(contract "$work/prev.mod" || true) || true
-read -r new_mod new_ver new_pkg < <(contract go.mod || true) || true
+old_tree=0
+if git cat-file -e "$prev:blisembed" 2>/dev/null; then old_tree=1; fi
+new_tree=0
+if [ -d blisembed ]; then new_tree=1; fi
+read -r old_mod old_ver old_pkg < <(contract "$work/prev.mod" "$old_tree" || true) || true
+read -r new_mod new_ver new_pkg < <(contract go.mod "$new_tree" || true) || true
 if [ -z "${new_mod:-}" ]; then
-  echo "go.mod requires no embed contract module" >&2
+  echo "go.mod requires no embed contract module and the tree has no blisembed" >&2
   exit 1
 fi
 
@@ -184,12 +212,17 @@ fork)
     echo "$prev imports the contract as $old_imp; comparing its pkg/embed with that import moved to $new_imp"
     (
       cd "$work/prev"
-      go mod edit -droprequire "$old_mod" -require "$new_mod@$new_ver"
+      go mod edit -droprequire "$old_mod"
+      if [ "$new_ver" = tree ]; then
+        cp -R "$root/blisembed" blisembed
+      else
+        go mod edit -require "$new_mod@$new_ver"
+      fi
       for f in pkg/embed/*.go; do
-        sed -e "s#\"$old_imp/embedtest\"#\"$new_mod/contracts/conformance/embedtest\"#" -e "s#\"$old_imp\"#\"$new_imp\"#" "$f" >"$f.moved"
+        sed -e "s#\"$(embedtest_pkg "$old_mod" "$old_pkg")\"#\"$(embedtest_pkg "$new_mod" "$new_pkg")\"#" -e "s#\"$old_imp\"#\"$new_imp\"#" "$f" >"$f.moved"
         mv "$f.moved" "$f"
       done
-      if grep -rq "\"$old_mod" pkg/embed; then
+      if grep -rEq "^[[:space:]]*([A-Za-z_.]+[[:space:]]+)?\"$old_mod[/\"]" pkg/embed; then
         echo "pkg/embed at $prev still names $old_mod after the move" >&2
         exit 1
       fi
@@ -204,7 +237,7 @@ contract)
     echo "$prev pins no embed contract module: the contract is new in this release, so every change is compatible"
     exit 0
   fi
-  if [ "$old_mod $old_ver" = "$new_mod $new_ver" ]; then
+  if [ "$old_mod $old_ver" = "$new_mod $new_ver" ] && [ "$new_ver" != tree ]; then
     echo "$new_mod $new_ver, as $prev pins: no change"
     exit 0
   fi
@@ -212,10 +245,19 @@ contract)
     GOWORK=off GOFLAGS=-mod=mod go mod download -json "$1@$2" | jq -er .Dir ||
       { echo "cannot resolve $1@$2" >&2; return 1; }
   }
-  old_dir=$(dir "$old_mod" "$old_ver")
-  new_dir=$(dir "$new_mod" "$new_ver")
+  if [ "$old_ver" = tree ]; then
+    git worktree add --detach --quiet "$work/prev" "$prev"
+    old_dir=$work/prev
+  else
+    old_dir=$(dir "$old_mod" "$old_ver")
+  fi
+  if [ "$new_ver" = tree ]; then
+    new_dir=$root
+  else
+    new_dir=$(dir "$new_mod" "$new_ver")
+  fi
   exports "$old_dir" "$old_pkg" "$work/old"
   exports "$new_dir" "$new_pkg" "$work/new"
-  compare "$work/old" "$work/new" "embed contract ($old_mod $old_ver ${old_pkg#./} -> $new_mod $new_ver ${new_pkg#./})"
+  compare "$work/old" "$work/new" "embed contract ($(label "$old_mod" "$old_ver" "$old_pkg") -> $(label "$new_mod" "$new_ver" "$new_pkg"))"
   ;;
 esac

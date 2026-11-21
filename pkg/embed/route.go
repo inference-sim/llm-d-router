@@ -27,7 +27,8 @@ import (
 
 	configPb "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	extProcPb "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
-	contract "github.com/inference-sim/blis-substrate/contracts/embed"
+
+	contract "github.com/llm-d/llm-d-router/blisembed"
 
 	errcommon "github.com/llm-d/llm-d-router/pkg/common/error"
 	"github.com/llm-d/llm-d-router/pkg/common/routing"

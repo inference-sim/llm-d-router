@@ -32,13 +32,11 @@ limitations under the License.
 //	    a push to llm-d-r: after is a merge commit whose first parent is before, plus the
 //	    history checks between them
 //	fork-policy toolchain
-//	    the go line of go.mod is no higher than contracts/toolchain of the blis-substrate version
-//	    go.mod requires, and the go command running is exactly that toolchain (LIF-2)
+//	    the go line of go.mod is no higher than the toolchain in hack/fork-policy/toolchain, and
+//	    the go command running is exactly that toolchain (LIF-2)
 //	fork-policy commits -base <sha> -head <sha> [-signatures github|git] [-repo owner/name]
 //	                    [-release-bot <email>]
-//	    the commit policy over the commits head adds to base, upstream's excepted. While the
-//	    pinned blis-substrate's .github/x20-deferral.yaml holds, an unsigned commit and a missing
-//	    Signed-off-by line are printed as deferred and do not fail; see deferral.go
+//	    the commit policy over the commits head adds to base, upstream's excepted
 //
 // Each subcommand prints one line per finding and exits 1 when there is any, 2 on a usage or git
 // error.
@@ -46,7 +44,6 @@ package main
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -56,7 +53,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"time"
 )
 
 const budgetPath = "hack/hosting-lint/budget.txt"
@@ -133,20 +129,7 @@ func run(dir, cmd string, args []string) ([]string, error) {
 		default:
 			return nil, fmt.Errorf("-signatures %q: want github or git", *sigs)
 		}
-		found, err := commits(g, *base, *head, v, *bot)
-		if err != nil {
-			return nil, err
-		}
-		// The deferral file is read from the blis-substrate commit go.mod pins (X20).
-		src, err := readDeferral(dir)
-		if err != nil {
-			return nil, err
-		}
-		fail, deferred := applyDeferral(src, time.Now().UTC(), found)
-		for _, d := range deferred {
-			fmt.Println("deferred:", d)
-		}
-		return fail, nil
+		return commits(g, *base, *head, v, *bot)
 	default:
 		return nil, fmt.Errorf("unknown subcommand %q: want history, landed, toolchain or commits", cmd)
 	}
@@ -278,45 +261,21 @@ func strayUpstream(g git, base, head, oldBase, newBase string) ([]string, error)
 	return stray, nil
 }
 
-// substrateModule is the module whose contracts/toolchain names the one Go toolchain of BLIS.
-const substrateModule = "github.com/inference-sim/blis-substrate"
+// toolchainFile names the one Go toolchain of BLIS: a line go1.N.M. The same toolchain is named in
+// inference-sim's substrate/contracts/toolchain; the fork cannot read that file (it depends on no
+// BLIS module), so a change of the toolchain edits both, by hand.
+const toolchainFile = "hack/fork-policy/toolchain"
 
-// substrateDir returns the directory of the blis-substrate version the module in dir requires,
-// downloading it when the module cache lacks it.
-func substrateDir(dir string) (string, error) {
-	modDir, err := goOutput(dir, "list", "-m", "-f", "{{.Dir}}", substrateModule)
-	if err != nil {
-		return "", err
-	}
-	if modDir != "" {
-		return modDir, nil
-	}
-	cmdOut, err := goOutput(dir, "mod", "download", "-json", substrateModule)
-	if err != nil {
-		return "", err
-	}
-	var m struct{ Dir string }
-	if err := json.Unmarshal([]byte(cmdOut), &m); err != nil || m.Dir == "" {
-		return "", fmt.Errorf("go mod download %s: no module directory in %q", substrateModule, cmdOut)
-	}
-	return m.Dir, nil
-}
-
-// toolchain checks the module in dir against contracts/toolchain of the blis-substrate version
-// its go.mod requires.
+// toolchain checks the module in dir against the toolchain in toolchainFile.
 func toolchain(dir string) ([]string, error) {
 	g := git{dir: dir}
 	goLine, err := goDirective(g, "HEAD")
 	if err != nil {
 		return nil, err
 	}
-	modDir, err := substrateDir(dir)
+	b, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(toolchainFile)))
 	if err != nil {
-		return nil, err
-	}
-	b, err := os.ReadFile(filepath.Join(modDir, "contracts", "toolchain"))
-	if err != nil {
-		return nil, fmt.Errorf("the pinned %s has no contracts/toolchain: %w", substrateModule, err)
+		return nil, fmt.Errorf("the fork has no toolchain file: %w", err)
 	}
 	running, err := goOutput(dir, "env", "GOVERSION")
 	if err != nil {
@@ -326,22 +285,22 @@ func toolchain(dir string) ([]string, error) {
 }
 
 // compareToolchain returns the findings for a go line goLine (as go.mod writes it, 1.N.M) and a
-// running go command running (go1.N.M), against the toolchain named in contracts/toolchain.
+// running go command running (go1.N.M), against the toolchain named in toolchainFile.
 func compareToolchain(goLine, running, want string) ([]string, error) {
 	if !version.IsValid(want) {
-		return nil, fmt.Errorf("contracts/toolchain names %q, not a Go toolchain version go1.N.M", want)
+		return nil, fmt.Errorf("%s names %q, not a Go toolchain version go1.N.M", toolchainFile, want)
 	}
 	if !version.IsValid("go" + goLine) {
 		return nil, fmt.Errorf("go.mod's go line %q is not a Go version", goLine)
 	}
 	var out []string
 	if version.Compare("go"+goLine, want) > 0 {
-		out = append(out, fmt.Sprintf("go.mod declares go %s, above contracts/toolchain %s: the release bot raises "+
-			"contracts/toolchain first, in the same review set (LIF-2)", goLine, want))
+		out = append(out, fmt.Sprintf("go.mod declares go %s, above %s %s: raise the toolchain file first, "+
+			"in the same review set as inference-sim's substrate/contracts/toolchain (LIF-2)", goLine, toolchainFile, want))
 	}
 	if running != want {
-		out = append(out, fmt.Sprintf("the go command is %s, not contracts/toolchain %s: install exactly that version "+
-			"and set GOTOOLCHAIN=local (LIF-2)", running, want))
+		out = append(out, fmt.Sprintf("the go command is %s, not %s %s: install exactly that version "+
+			"and set GOTOOLCHAIN=local (LIF-2)", running, toolchainFile, want))
 	}
 	return out, nil
 }

@@ -21,7 +21,7 @@ import (
 	"strings"
 	"testing"
 
-	contract "github.com/inference-sim/blis-substrate/contracts/embed"
+	contract "github.com/llm-d/llm-d-router/blisembed"
 )
 
 // guideEntries are the indexed llm-d guide files (reference-configs/guides).

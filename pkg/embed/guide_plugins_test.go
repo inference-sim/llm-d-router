@@ -25,8 +25,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/inference-sim/blis-substrate/contracts/conformance/embedtest"
-	contract "github.com/inference-sim/blis-substrate/contracts/embed"
+	contract "github.com/llm-d/llm-d-router/blisembed"
+	"github.com/llm-d/llm-d-router/blisembed/embedtest"
 )
 
 // experimentalFlags select the standalone pool and allow the Alpha plugins the llm-d guides use.
