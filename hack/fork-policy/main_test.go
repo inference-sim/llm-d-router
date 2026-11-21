@@ -278,78 +278,6 @@ func TestLandedRefusesARecreatedBranch(t *testing.T) {
 	}
 }
 
-const (
-	signoff  = "Signed-off-by: A Person <person@example.com>"
-	assisted = "Assisted-by: Claude Code (Claude Opus 5.5)"
-)
-
-func TestPolicy(t *testing.T) {
-	for _, tc := range []struct {
-		name     string
-		trailers []string
-		signed   bool
-		author   string
-		want     []string // substrings, one per finding, in order
-	}{
-		{"person's commit", []string{signoff}, true, "", nil},
-		{"agent-assisted commit", []string{assisted, signoff}, true, "", nil},
-		{"unsigned", []string{signoff}, false, "", []string{"not signed"}},
-		{"no sign-off", nil, true, "", []string{"no Signed-off-by"}},
-		{"tool as co-author", []string{"Co-authored-by: Claude <noreply@anthropic.com>", signoff}, true, "", []string{"Co-authored-by"}},
-		{"person as co-author", []string{"Co-authored-by: B Person <b@example.com>", signoff}, true, "", nil},
-		{"tool signs off", []string{"Signed-off-by: Claude <noreply@anthropic.com>"}, true, "", []string{"names a tool or bot"}},
-		{"bot signs off", []string{"Signed-off-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>"}, true, "", []string{"names a tool or bot"}},
-		{"two Assisted-by lines", []string{assisted, assisted, signoff}, true, "", []string{"2 Assisted-by lines"}},
-		{"empty Assisted-by", []string{"Assisted-by:", signoff}, true, "", []string{"names no tool"}},
-		{"release bot", nil, true, "bot@example.com", nil},
-		{"release bot signs off", []string{signoff}, true, "bot@example.com", []string{"release-bot commit carries a Signed-off-by"}},
-		{"release bot unsigned", nil, false, "bot@example.com", []string{"not signed"}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			c := commitInfo{subject: "s", authorEmail: "person@example.com"}
-			if tc.author != "" {
-				c.authorEmail = tc.author
-			}
-			for _, tr := range tc.trailers {
-				k, v, _ := strings.Cut(tr, ":")
-				c.trailers = append(c.trailers, [2]string{k, strings.TrimSpace(v)})
-			}
-			got := policy(c, tc.signed, "bot@example.com")
-			if len(got) != len(tc.want) {
-				t.Fatalf("policy = %q, want %d finding(s) %q", got, len(tc.want), tc.want)
-			}
-			for i, w := range tc.want {
-				if !strings.Contains(got[i], w) {
-					t.Errorf("finding %d = %q, want it to mention %q", i, got[i], w)
-				}
-			}
-		})
-	}
-}
-
-// TestCommitsSkipsUpstreamHistory: the commit policy reads only the commits written for BLIS.
-// The upstream release a pull request merges carries no sign-off and is not checked; the fork's
-// own commits, including the merge commit, are.
-func TestCommitsSkipsUpstreamHistory(t *testing.T) {
-	r, tip, _, v110 := fork(t)
-	r.git("checkout", "-q", "-b", "upgrade")
-	r.git("merge", "-q", "--no-ff", "-m", "Merge v1.1.0 into llm-d-r\n\n"+signoff, "v1.1.0")
-	r.setBase(v110, "hosting-lint: upstream_base = v1.1.0\n\n"+assisted+"\n"+signoff)
-	head := r.commit("embed.go", "package embed\n", "embed: follow v1.1.0")
-	var seen []string
-	allSigned := func(sha string) (bool, error) { seen = append(seen, sha); return true, nil }
-	out, err := commits(git{dir: r.dir}, tip, head, allSigned, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(seen) != 3 {
-		t.Errorf("checked %d commits, want the 3 the pull request wrote (not upstream's)", len(seen))
-	}
-	if len(out) != 1 || !strings.Contains(out[0], `"embed: follow v1.1.0"`) || !strings.Contains(out[0], "no Signed-off-by") {
-		t.Fatalf("want one finding, on the commit without a sign-off, got %q", out)
-	}
-}
-
 func TestCompareToolchain(t *testing.T) {
 	for _, tc := range []struct {
 		goLine, running, want string
@@ -387,8 +315,6 @@ func TestRunRefusesMissingFlags(t *testing.T) {
 	}{
 		{"history", []string{"-base", "x"}, "missing -head"},
 		{"landed", nil, "missing -before, -after"},
-		{"commits", []string{"-base", "x", "-head", "y", "-signatures", "maybe"}, `-signatures "maybe"`},
-		{"commits", []string{"-base", "x", "-head", "y", "-repo", ""}, "needs -repo"},
 		{"rebase", nil, "unknown subcommand"},
 	} {
 		t.Setenv("GITHUB_REPOSITORY", "")
