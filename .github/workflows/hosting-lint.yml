@@ -15,39 +15,16 @@ on:
 permissions:
   contents: read
 
+# A new push to a pull request cancels its older run; a run on a push to llm-d-r always completes.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   # The go line in go.mod names the toolchain; no job downloads another.
   GOTOOLCHAIN: local
 
 jobs:
-  # The plugin-audit and conformance jobs test pkg/embed against the router's hosted packages, so
-  # they run only when a change touches those, the reference configs, hack/, the module files or
-  # this workflow (hack/hosting-selection/select.sh, with its own sample-change test). A job
-  # skipped by `if` reports as skipped, which a required check accepts, so they stay required by
-  # name. A push, or a change list that cannot be read, selects them.
-  changes:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      hosted: ${{ steps.select.outputs.hosted }}
-    steps:
-      # A pull request's checkout is the merge of its head into its base: the difference from the
-      # first parent is exactly what the pull request changes.
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          fetch-depth: 2
-      - name: the selection answers the sample changes as designed
-        run: bash hack/hosting-selection/select_test.sh
-      - id: select
-        env:
-          EVENT: ${{ github.event_name }}
-        run: |
-          set -euo pipefail
-          if [ "$EVENT" != pull_request ] || ! git rev-parse --verify -q HEAD^2 > /dev/null; then
-            echo "hosted=true" | tee -a "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          git diff --name-only --no-renames HEAD^1 HEAD | hack/hosting-selection/select.sh | tee -a "$GITHUB_OUTPUT"
   hosting:
     runs-on: ubuntu-latest
     steps:
@@ -60,11 +37,13 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
-      # One cache of the Go module and build directories for this job. Each run saves its own entry
-      # (the key ends in the commit) and the next run restores the latest one, so the build of the
-      # last run on llm-d-r is what a pull request starts from. setup-go's own cache is keyed on
-      # go.sum alone, so it is saved once and never grows with what this job builds.
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      # One cache of the Go module and build directories for this job. A push to llm-d-r saves its
+      # own entry (the key ends in the commit) and every run restores the latest one, so the build
+      # of the last run on llm-d-r is what a pull request starts from. Pull requests only restore:
+      # an entry saved under a pull request's ref is restorable by that pull request alone.
+      # setup-go's own cache is keyed on go.sum alone, so it is saved once and never grows with
+      # what this job builds.
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
             ~/go/pkg/mod
@@ -97,8 +76,17 @@ jobs:
           if [ -n "$changed" ]; then unformatted=$(gofmt -l $changed); fi
           if [ -n "$added" ]; then unformatted="$unformatted$(go run golang.org/x/tools/cmd/goimports@v0.50.0 -local github.com/llm-d/llm-d-router -l $added)"; fi
           if [ -n "$unformatted" ]; then echo "not formatted:"; echo "$unformatted"; exit 1; fi
-      - name: Seam and converted packages
-        run: go test ./pkg/common/hosting/... ./pkg/embed/... ./pkg/epp/requestcontrol/... ./pkg/epp/scheduling/... ./pkg/epp/datastore/... ./pkg/epp/datalayer/... ./pkg/epp/flowcontrol/... ./pkg/epp/framework/... ./pkg/epp/handlers/... ./cmd/epp/... ./hack/fork-policy/...
+      # pkg/embed includes the embed conformance suite (blisembed/embedtest against pkg/embed.New,
+      # RTR-3), the no-github.com/inference-sim/ import test (X7) and the audited plugin lists (RTR-4).
+      - name: Seam, converted packages, the hosting contract and its conformance suite
+        run: go test ./pkg/common/hosting/... ./pkg/embed/... ./pkg/epp/requestcontrol/... ./pkg/epp/scheduling/... ./pkg/epp/datastore/... ./pkg/epp/datalayer/... ./pkg/epp/flowcontrol/... ./pkg/epp/framework/... ./pkg/epp/handlers/... ./cmd/epp/... ./hack/fork-policy/... ./blisembed/...
+      - if: github.event_name == 'push'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-hosting-${{ hashFiles('go.sum', 'Dockerfile.builder') }}-${{ github.sha }}
 
   # golangci-lint, at the version the builder image installs, on the lines the change adds. The
   # whole tree is not linted: upstream's own findings are upstream's to fix.
@@ -112,15 +100,14 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
-      # One cache of the Go module and build directories for this job. Each run saves its own entry
-      # (the key ends in the commit) and the next run restores the latest one, so the build of the
-      # last run on llm-d-r is what a pull request starts from. setup-go's own cache is keyed on
-      # go.sum alone, so it is saved once and never grows with what this job builds.
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      # The Go module and build directories and golangci-lint's analysis cache, saved and restored
+      # as in the hosting job.
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
+            ~/.cache/golangci-lint
           key: go-lint-${{ hashFiles('go.sum', 'Dockerfile.builder') }}-${{ github.sha }}
           restore-keys: |
             go-lint-${{ hashFiles('go.sum', 'Dockerfile.builder') }}-
@@ -132,24 +119,14 @@ jobs:
           version=$(sed -n 's/^ARG GOLANGCI_LINT_VERSION=//p' Dockerfile.builder)
           if [ -z "$version" ]; then echo "Dockerfile.builder names no GOLANGCI_LINT_VERSION"; exit 1; fi
           go run "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$version" run --config=./.golangci.yml --new-from-rev="$BASE"
-
-  # pkg/embed.New against the router conformance suite in this repository (blisembed/embedtest),
-  # RTR-3. The suite's own tests run with it.
-  conformance:
-    needs: changes
-    if: needs.changes.outputs.hosted == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+      - if: github.event_name == 'push'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
-          go-version-file: go.mod
-      - name: Embed conformance (blisembed/embedtest against pkg/embed.New)
-        run: go test ./pkg/embed/ -run 'TestConformance$' -count=1 -v
-      - name: The hosting contract and its suite
-        run: go test ./blisembed/... -count=1
-      - name: The fork imports no github.com/inference-sim/ package (X7)
-        run: go test ./pkg/embed/ -run 'TestImportsNoInferenceSimPackage$' -count=1 -v
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+            ~/.cache/golangci-lint
+          key: go-lint-${{ hashFiles('go.sum', 'Dockerfile.builder') }}-${{ github.sha }}
 
   # The fork's versioned surface is pkg/embed.New, its implementation of the embed contract.
   # Between v*-blis* tags on one upstream major both change only compatibly (RTR-3); the script
@@ -176,19 +153,3 @@ jobs:
         run: bash hack/embed-apidiff.sh contract
       - name: Compatibility check fails on a known-bad contract change (RTR-3)
         run: bash hack/embed-apidiff-test.sh
-
-  # Every type on the fork's audited and refused lists is a type llm-d registers; a type outside
-  # the audited list is refused before its constructor runs, whatever the host allows (RTR-4).
-  # inference-sim's TestSupportedTypesAreHostedByTheFork holds BLIS's allow-list within the
-  # audited list.
-  plugin-audit:
-    needs: changes
-    if: needs.changes.outputs.hosted == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
-        with:
-          go-version-file: go.mod
-      - name: Audited plugin list
-        run: go test ./pkg/embed/ -run 'TestAuditedAndRefusedTypesExist$|TestRefusalPrecedence$|TestUnsupportedPlugin|TestFactoriesRestored$' -count=1 -v
