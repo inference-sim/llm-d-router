@@ -17,7 +17,7 @@ permissions:
 
 # A new push to a pull request cancels its older run; a run on a push to llm-d-r always completes.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -80,6 +80,9 @@ jobs:
       # RTR-3), the no-github.com/inference-sim/ import test (X7) and the audited plugin lists (RTR-4).
       - name: Seam, converted packages, the hosting contract and its conformance suite
         run: go test ./pkg/common/hosting/... ./pkg/embed/... ./pkg/epp/requestcontrol/... ./pkg/epp/scheduling/... ./pkg/epp/datastore/... ./pkg/epp/datalayer/... ./pkg/epp/flowcontrol/... ./pkg/epp/framework/... ./pkg/epp/handlers/... ./cmd/epp/... ./hack/fork-policy/... ./blisembed/...
+      # packages.Load and go list read inputs the test cache does not track.
+      - name: The fork imports no github.com/inference-sim/ package (X7)
+        run: go test ./pkg/embed/ -run 'TestImportsNoInferenceSimPackage$|TestCRDsMatchModules$' -count=1
       - if: github.event_name == 'push'
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
