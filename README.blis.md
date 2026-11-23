@@ -89,17 +89,55 @@ signature or sign-off, or its trailers. The fork's own checks (`fork-policy.yml`
 
 - `history`: the pull request merges and never rebases (RTR-1); `landed` does the same for a push to `llm-d-r`.
 - `hosting`: `go mod tidy -diff`, the toolchain, `hosting-lint`, the patch budget, formatting, and the
-  tests of the seam and the converted router packages.
+  tests of the seam, the converted router packages, `pkg/embed` (`TestConformance`, the
+  no-`github.com/inference-sim/` import test, the audited and refused plugin lists) and `blisembed`.
 - `lint`: golangci-lint on the lines a change adds.
-- `conformance`: `TestConformance`, `go test ./blisembed/...`, and the no-`github.com/inference-sim/` import test.
 - `api-diff`: `embed-apidiff.sh fork` and `contract` against the latest `-blis` tag.
-- `plugin-audit`: the audited and refused plugin lists.
+
+`check-typos.yaml` also runs. `llm-d-r` is the repository's default branch, so workflows triggered by
+`pull_request_target`, `issue_comment`, `issues` or `schedule` run from `llm-d-r`'s copy.
 
 Removed because they checked process, not the product: the signed-commit and sign-off workflow, the
 release-note validation (the note is read from the pull request body when `release-notes-assemble.yaml`
 runs at tag time), and the `fork-policy commits` check. Whether `llm-d-r` requires signed commits is
 set in the repository ruleset, which the maintainer owns. `make signed-commits-check` remains as
 local developer tooling.
+
+#### Disabled upstream workflows
+
+The upstream workflows below are disabled in the repository's Actions settings
+(`gh workflow disable <file>`), not deleted: a deleted upstream file counts against the patch budget
+and conflicts on each release merge that changes it. The disabled state is not stored in the
+repository; this list records it.
+
+| Workflow | Reason |
+|---|---|
+| `pr-needs-rebase.yaml` | Upstream's re-approve process; feeds the disabled merge queue |
+| `pr-review-gate.yaml` | Only feeds the disabled merge queue |
+| `non-main-gatekeeper.yml` | Its step is skipped for `llm-d-r` and `m3/` bases |
+| `pr-hold-gate.yml` | With no automatic hold label it always passes |
+| `pr-size-labeler.yml` | Labels only |
+| `pr-hold-comment.yml` | `/hold` is not used on fork pull requests |
+| `pr-rebase.yaml` | `/rebase` is not used on fork pull requests |
+| `re-run-action.yml` | `/retest` is not used on fork pull requests |
+| `issue-kind-label.yaml` | Upstream's label scheme |
+| `pr-area-labeler.yaml` | Upstream's labels |
+| `pr-kind-label.yaml` | Upstream's labels |
+| `ci-pr-checks.yaml` | Triggers for `main` only; e2e, images and charts are not the fork's product |
+| `ci-coordinator.yaml` | Triggers for `main` only; the fork does not change the coordinator |
+| `ci-lint.yaml` | Triggers for `main` only; the fork's `lint` covers its changes |
+| `md-link-check.yml` | Triggers for `main` only |
+| `ci-dependency-review.yaml` | Triggers for `main` only; the dependency graph is off |
+| `ci-dev.yaml`, `ci-release.yaml` | Upstream's image and chart publishing |
+| `release-notes-assemble.yaml` | Upstream's release process |
+| `pr-merge-queue.yaml` | Upstream's merge queue |
+| `nightly-router-perf-test-optimized-baseline-10k-1k.yaml` | Upstream's benchmark cluster |
+| `issue-triage.yaml`, `issue-assignment-check.yaml`, `stale.yaml`, `unstale.yaml` | Upstream's issue process |
+
+`gh workflow enable <file>` turns one back on. A workflow that an upstream release adds or renames
+arrives enabled in the release-merge pull request into `llm-d-r`. The review of that pull request
+checks `.github/workflows/` in its diff, disables each new workflow the fork does not need, and
+updates this table.
 
 The branch `llm-d-r` takes pull requests as merge commits. A release is a signed, annotated tag
 `vX.Y.Z-blis.N` cut by a person.
