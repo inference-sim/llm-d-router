@@ -23,8 +23,9 @@ import (
 	"sync"
 	"time"
 
-	contract "github.com/inference-sim/blis-substrate/contracts/embed"
 	"k8s.io/utils/clock"
+
+	contract "github.com/llm-d/llm-d-router/blisembed"
 
 	"github.com/llm-d/llm-d-router/pkg/common/hosting"
 )

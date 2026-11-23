@@ -12,7 +12,7 @@ this page.
   it reads time, starts work, draws random numbers and makes calls only through
   `pkg/common/hosting`, so a run under a simulated clock is deterministic.
 - It **owns** the hosting seam (`pkg/common/hosting`), the embed package `pkg/embed` that
-  implements blis-substrate's router `embed` contract, the reference EndpointPicker configurations
+  implements the hosting contract `blisembed` (with its conformance suite `blisembed/embedtest`), the reference EndpointPicker configurations
   (`reference-configs/`), and the checks that keep these honest (`hack/hosting-lint`,
   `hack/fork-policy`, `hack/embed-apidiff.sh`).
 - It **never holds** a routing rule of its own. It changes only how the router is hosted: the
@@ -22,14 +22,49 @@ this page.
 
 ## How it connects
 
-- **Pins** blis-substrate (`go.mod`: the contracts it implements, at a release tag), and tracks one
-  upstream llm-d release (`upstream_base` in `hack/hosting-lint/budget.txt`), merged into the
-  `llm-d-r` branch and never rebased.
-- **Pinned by** inference-sim, which replaces `github.com/llm-d/llm-d-router` with this module at a
-  `vX.Y.Z-blis.N` tag (its one permitted `replace`); blis-config-search and accuracy-dashboard read
+- **Owns** the hosting contract: `blisembed/` (Go package `embed`), with its conformance suite
+  `blisembed/embedtest/`. This repository is its only home: a change to the contract is made and
+  reviewed here, and it depends on no BLIS module (`pkg/embed`'s `TestImportsNoInferenceSimPackage`
+  fails on any `github.com/inference-sim/` import, tests included, and on a graph that no longer
+  reaches `blisembed`).
+- **Tracks** one upstream llm-d release (`upstream_base` in `hack/hosting-lint/budget.txt`), merged
+  into the `llm-d-r` branch and never rebased.
+- **Pinned by** inference-sim, whose `go.mod` has one `replace` of `github.com/llm-d/llm-d-router`
+  with this module (its only permitted `replace`). The pin names a `vX.Y.Z-blis.N` tag; until the
+  maintainer cuts the next tag it is a pseudo-version of a commit of this repository, and the
+  maintainer chooses the tag. blis-config-search and accuracy-dashboard read
   `reference-configs/policies.json` at a commit.
-- **Implements** blis-substrate's router `embed` contract (`pkg/embed`); it consumes no other BLIS
-  module.
+- **Implements** the `blisembed` contract (`pkg/embed`, whose `New` is the contract's `Constructor`);
+  it consumes no BLIS module.
+
+## The hosting contract, for a reviewer
+
+`blisembed` is the surface a simulator uses to host the router; inference-sim is its consumer.
+Read in this order:
+
+1. `blisembed/embed.go`, package comment first: who owns what (the host owns simulated time,
+   background work, randomness and the endpoints' lifecycle through `Runtime`, `SetEndpoint` and
+   `RoundTripper`; the router owns every decision and the meaning of `Config`), the determinism
+   rule, and the compatibility rule (no interface gains a method inside a major version; an
+   optional capability is a separate interface found by type assertion). Public types: `Runtime`,
+   `Constructor`, `Config`, `Router`, `Flight`, `Request`, `Decision`, `Rejection`, `Requirements`,
+   `Endpoint`, `KVBatch` and its events.
+2. `blisembed/embedtest/`: the conformance suite any `Constructor` must pass (`embedtest.Run`),
+   and a deterministic `Runtime`. `pkg/embed`'s `TestConformance` runs it against the fork's `New`.
+3. `pkg/embed/doc.go` and `pkg/embed/imports_test.go`: `pkg/embed.New` is the one implementation, and
+   the import rule that keeps the fork free of BLIS modules.
+4. `hack/embed-apidiff.sh` (and `hack/embed-apidiff-test.sh`): compatibility of `pkg/embed` and of
+   the contract between fork tags (RTR-3).
+
+The `blisembed` files are new, so they cost no patch budget; the lines changed in upstream files
+are counted by `hack/hosting-lint -budget`.
+
+## Toolchain (edit in two places)
+
+`hack/fork-policy/toolchain` holds the Go toolchain the checks require (`go.mod`'s `go` line may not
+exceed it, and the `go` command that runs must be exactly it; `go run ./hack/fork-policy toolchain`).
+inference-sim keeps the same value in `substrate/contracts/toolchain`. The fork may not import
+inference-sim, so the two are separate files that must change together, in one review set (LIF-2).
 
 ## Build, test and run
 
@@ -40,8 +75,31 @@ The checks that are the fork's own:
 go run ./hack/hosting-lint            # every clock, goroutine, random draw and call goes through the seam
 go run ./hack/hosting-lint -budget    # the patch budget against upstream_base
 go run ./hack/fork-policy history -base <rev> -head <rev>   # merge, never rebase (RTR-1)
-go test ./pkg/embed/ ./cmd/epp/runner/
+go run ./hack/fork-policy toolchain   # go.mod and the go command against hack/fork-policy/toolchain (LIF-2)
+go test ./blisembed/... ./pkg/embed/ ./cmd/epp/runner/      # the contract, its conformance suite, the embed package
+bash hack/embed-apidiff-test.sh       # the compatibility check fails on a known-bad contract change (RTR-3)
 ```
+
+The embed tests need no cluster and run in seconds; use the Go toolchain in `hack/fork-policy/toolchain`.
+
+### What CI checks
+
+CI checks product correctness only. No check reads the pull request title or body, a commit's
+signature or sign-off, or its trailers. The fork's own checks (`fork-policy.yml`, `hosting-lint.yml`):
+
+- `history`: the pull request merges and never rebases (RTR-1); `landed` does the same for a push to `llm-d-r`.
+- `hosting`: `go mod tidy -diff`, the toolchain, `hosting-lint`, the patch budget, formatting, and the
+  tests of the seam and the converted router packages.
+- `lint`: golangci-lint on the lines a change adds.
+- `conformance`: `TestConformance`, `go test ./blisembed/...`, and the no-`github.com/inference-sim/` import test.
+- `api-diff`: `embed-apidiff.sh fork` and `contract` against the latest `-blis` tag.
+- `plugin-audit`: the audited and refused plugin lists.
+
+Removed because they checked process, not the product: the signed-commit and sign-off workflow, the
+release-note validation (the note is read from the pull request body when `release-notes-assemble.yaml`
+runs at tag time), and the `fork-policy commits` check. Whether `llm-d-r` requires signed commits is
+set in the repository ruleset, which the maintainer owns. `make signed-commits-check` remains as
+local developer tooling.
 
 The branch `llm-d-r` takes pull requests as merge commits. A release is a signed, annotated tag
 `vX.Y.Z-blis.N` cut by a person.

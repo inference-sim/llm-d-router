@@ -23,34 +23,32 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
-// substrate is the module of the BLIS contracts.
-const substrate = "github.com/inference-sim/blis-substrate"
+// blisembed is the hosting contract, which lives in this module.
+const blisembed = "github.com/llm-d/llm-d-router/blisembed"
 
-// TestImportsOnlySubstrateContracts: the fork imports from blis-substrate only packages under
-// contracts/, and no other BLIS module, in any package or test (BLIS design X7). The cost model,
-// the catalog, the registry and the data loader are inference-sim's to import.
-func TestImportsOnlySubstrateContracts(t *testing.T) {
+// TestImportsNoInferenceSimPackage: the fork imports no github.com/inference-sim/ package, in any
+// package or test, so it depends on no BLIS module and inference-sim can import it without a
+// cycle (BLIS design X7, RTR-3). The hosting contract is its own blisembed package.
+func TestImportsNoInferenceSimPackage(t *testing.T) {
 	pkgs, err := packages.Load(&packages.Config{Mode: packages.NeedName | packages.NeedImports | packages.NeedDeps, Tests: true},
 		"github.com/llm-d/llm-d-router/...")
 	if err != nil {
 		t.Fatal(err)
 	}
-	contracts := 0
+	contract := 0
 	packages.Visit(pkgs, nil, func(p *packages.Package) {
 		for _, e := range p.Errors {
 			t.Errorf("%s: %v", p.PkgPath, e)
 		}
 		path := p.PkgPath
 		switch {
-		case strings.HasPrefix(path, substrate+"/contracts/"):
-			contracts++
-		case path == substrate || strings.HasPrefix(path, substrate+"/"):
-			t.Errorf("the build reaches %s: the fork imports only blis-substrate's contracts/ packages", path)
+		case path == blisembed:
+			contract++
 		case strings.HasPrefix(path, "github.com/inference-sim/"):
-			t.Errorf("the build reaches %s: the fork imports no BLIS module but blis-substrate's contracts/", path)
+			t.Errorf("the build reaches %s: the fork imports no package of github.com/inference-sim/", path)
 		}
 	})
-	if contracts == 0 {
-		t.Fatal("no package under blis-substrate's contracts/ was found: the test checked nothing")
+	if contract == 0 {
+		t.Fatalf("%s was not reached: the test checked nothing", blisembed)
 	}
 }

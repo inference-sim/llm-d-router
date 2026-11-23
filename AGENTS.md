@@ -37,9 +37,8 @@ llm-d Router. Go service that routes inference requests to model-serving pods vi
 - Self-check on the way out: if the change grew larger than expected or the fix feels hacky, rewrite the clean version before opening the PR.
 - Verify the code passes `make presubmit` locally before submitting a PR.
 - Always use the project's `.github/PULL_REQUEST_TEMPLATE.md`.
-  - Document user (not developer) facing changes in the ```release-note``` block. A required check
-    validates it on the PR; the note is read from the PR body directly when release notes are
-    assembled at tag time.
+  - Document user (not developer) facing changes in the ```release-note``` block. The note is read
+    from the PR body directly when release notes are assembled at tag time.
   - If you include a test plan section, mark passing tests with [x] so it is clear which ran and passed.
     List only new tests - indicate functionality verified, not the test names.
 

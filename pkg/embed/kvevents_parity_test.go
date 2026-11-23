@@ -24,7 +24,7 @@ import (
 
 	"github.com/vmihailenco/msgpack/v5"
 
-	contract "github.com/inference-sim/blis-substrate/contracts/embed"
+	contract "github.com/llm-d/llm-d-router/blisembed"
 
 	"github.com/llm-d/llm-d-router/pkg/kvevents"
 	"github.com/llm-d/llm-d-router/pkg/kvevents/engineadapter"
